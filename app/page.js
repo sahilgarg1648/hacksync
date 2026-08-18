@@ -20,7 +20,7 @@ import {
   Calendar, Clock, Award,
   Plus, X, Check, Layers, Heart, Send, Smile, MoreVertical,
   Server, Lightbulb, Flame, GitFork, Star, Zap, UserPlus, Loader2,
-  GraduationCap, Shield,
+  GraduationCap, Shield, ShieldCheck,
 } from 'lucide-react';
 
 // ---------- constants ----------
@@ -250,7 +250,10 @@ export default function App() {
               onSubmitHackathon={() => setSubmitHackathonOpen(true)} onMessage={openConversationWith} />
           )}
           {view === 'matches' && <MatchesView matches={matches} loading={loadingMatches} onViewDev={setSelectedDev} onMessage={openConversationWith} />}
-          {view === 'profile' && <ProfileView user={user} onEdit={() => setOnboardingOpen(true)} />}
+          {view === 'profile' && (
+            <ProfileView user={user} onEdit={() => setOnboardingOpen(true)}
+              onOpenTeam={(id) => { setSelectedTeamId(id); setView('team'); }} />
+          )}
           {view === 'teams' && (
             <TeamsView teams={teams} user={user} hackathons={hackathons}
               onCreate={() => setCreateTeamOpen(true)}
@@ -1008,15 +1011,33 @@ const MatchesView = ({ matches, loading, onViewDev, onMessage }) => {
 // ====================================================================
 // PROFILE VIEW (with GitHub stats)
 // ====================================================================
-const ProfileView = ({ user, onEdit }) => {
+const ProfileView = ({ user, onEdit, onOpenTeam }) => {
   const [github, setGithub] = useState(null);
   const [githubLoading, setGithubLoading] = useState(false);
+  const [teams, setTeams] = useState(null);
+  const [matchCount, setMatchCount] = useState(null);
+
   useEffect(() => {
     if (user.github) {
       setGithubLoading(true);
       api(`/github/${encodeURIComponent(user.github)}`).then(setGithub).catch(() => {}).finally(() => setGithubLoading(false));
     }
   }, [user.github]);
+
+  useEffect(() => {
+    api('/teams?mine=true').then((d) => setTeams(d.teams)).catch(() => setTeams([]));
+    api('/matches').then((d) => setMatchCount(d.matches.filter((m) => m.score >= 60).length)).catch(() => setMatchCount(0));
+  }, []);
+
+  const memberSince = user.createdAt && new Date(user.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+  const stats = [
+    { label: 'Teams', value: teams === null ? '—' : teams.length, icon: Layers, color: 'from-blue-500 to-cyan-500' },
+    { label: 'Strong matches', value: matchCount === null ? '—' : matchCount, icon: Heart, color: 'from-purple-500 to-pink-500' },
+    { label: 'Skills listed', value: user.skills?.length || 0, icon: Code2, color: 'from-amber-500 to-orange-500' },
+    { label: 'Status', value: user.verified ? 'Verified' : 'Unverified', icon: user.verified ? ShieldCheck : Shield, color: user.verified ? 'from-green-500 to-emerald-500' : 'from-white/20 to-white/10' },
+  ];
+
   return (
     <div className="space-y-6">
       <div className="glass-strong rounded-3xl p-8 relative overflow-hidden">
@@ -1024,10 +1045,16 @@ const ProfileView = ({ user, onEdit }) => {
         <div className="relative flex flex-col md:flex-row items-start gap-6">
           <Avatar className="w-28 h-28 ring-4 ring-purple-500/40 glow-purple"><AvatarImage src={user.avatar} /><AvatarFallback className="text-3xl">{user.name?.[0]}</AvatarFallback></Avatar>
           <div className="flex-1">
-            <h1 className="text-3xl font-bold">{user.name}</h1>
-            <p className="text-white/60 mt-1">{user.college} · {user.year}</p>
-            <p className="text-white/70 mt-3 max-w-2xl">{user.bio}</p>
-            <div className="flex gap-2 mt-4">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-3xl font-bold">{user.name}</h1>
+              {user.verified && (
+                <span title="Verified"><ShieldCheck className="w-5 h-5 text-cyan-400" /></span>
+              )}
+            </div>
+            <p className="text-white/60 mt-1">{user.college}{user.college && user.year ? ' · ' : ''}{user.year}</p>
+            {memberSince && <p className="text-xs text-white/40 mt-1">Member since {memberSince}</p>}
+            <p className="text-white/70 mt-3 max-w-2xl">{user.bio || <span className="text-white/40 italic">No bio yet — add one so teammates know what you build.</span>}</p>
+            <div className="flex gap-2 mt-4 flex-wrap">
               {user.github && <a href={user.github.startsWith('http') ? user.github : `https://github.com/${user.github}`} target="_blank" rel="noreferrer"><Button size="sm" variant="outline" className="bg-white/5 border-white/10"><Github className="w-3 h-3 mr-1" /> GitHub</Button></a>}
               {user.linkedin && <a href={user.linkedin} target="_blank" rel="noreferrer"><Button size="sm" variant="outline" className="bg-white/5 border-white/10"><Linkedin className="w-3 h-3 mr-1" /> LinkedIn</Button></a>}
               <Button size="sm" onClick={onEdit} className="gradient-button text-white border-0">Edit profile</Button>
@@ -1036,18 +1063,45 @@ const ProfileView = ({ user, onEdit }) => {
           <Badge className="bg-purple-500/20 text-purple-300 border-0 capitalize">{user.experience}</Badge>
         </div>
       </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {stats.map((s) => (
+          <div key={s.label} className="glass rounded-2xl p-4 relative overflow-hidden">
+            <div className={`absolute -top-6 -right-6 w-20 h-20 bg-gradient-to-br ${s.color} opacity-20 blur-2xl`} />
+            <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${s.color} flex items-center justify-center mb-2 relative`}><s.icon className="w-4 h-4" /></div>
+            <div className="text-xl font-bold relative capitalize">{s.value}</div>
+            <div className="text-xs text-white/50 mt-0.5 relative">{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {!user.verified && (
+        <div className="glass rounded-2xl p-4 flex items-center gap-3 border border-cyan-500/20">
+          <Shield className="w-5 h-5 text-cyan-400 flex-shrink-0" />
+          <p className="text-sm text-white/70 flex-1">
+            Your profile isn't verified yet. Add a GitHub or LinkedIn link and fill out your skills to boost your credibility with teammates and speed up admin review.
+          </p>
+        </div>
+      )}
+
       <div className="grid md:grid-cols-2 gap-6">
         <div className="glass rounded-2xl p-6">
           <h3 className="font-bold mb-4 flex items-center gap-2"><Code2 className="w-4 h-4 text-purple-400" /> Skills</h3>
-          <div className="flex flex-wrap gap-2">{user.skills?.map((s) => <Badge key={s} className="bg-purple-500/20 text-purple-300 border-0">{s}</Badge>)}</div>
+          {user.skills?.length > 0 ? (
+            <div className="flex flex-wrap gap-2">{user.skills.map((s) => <Badge key={s} className="bg-purple-500/20 text-purple-300 border-0">{s}</Badge>)}</div>
+          ) : <p className="text-sm text-white/40">No skills added yet.</p>}
         </div>
         <div className="glass rounded-2xl p-6">
           <h3 className="font-bold mb-4 flex items-center gap-2"><Heart className="w-4 h-4 text-cyan-400" /> Interests</h3>
-          <div className="flex flex-wrap gap-2">{user.interests?.map((s) => <Badge key={s} className="bg-cyan-500/20 text-cyan-300 border-0">{s}</Badge>)}</div>
+          {user.interests?.length > 0 ? (
+            <div className="flex flex-wrap gap-2">{user.interests.map((s) => <Badge key={s} className="bg-cyan-500/20 text-cyan-300 border-0">{s}</Badge>)}</div>
+          ) : <p className="text-sm text-white/40">No interests added yet.</p>}
         </div>
         <div className="glass rounded-2xl p-6">
           <h3 className="font-bold mb-4 flex items-center gap-2"><Clock className="w-4 h-4 text-blue-400" /> Availability</h3>
-          <div className="flex flex-wrap gap-2">{user.availability?.map((s) => <Badge key={s} className="bg-blue-500/20 text-blue-300 border-0">{s}</Badge>)}</div>
+          {user.availability?.length > 0 ? (
+            <div className="flex flex-wrap gap-2">{user.availability.map((s) => <Badge key={s} className="bg-blue-500/20 text-blue-300 border-0">{s}</Badge>)}</div>
+          ) : <p className="text-sm text-white/40">No availability set yet.</p>}
         </div>
         <div className="glass rounded-2xl p-6">
           <h3 className="font-bold mb-4 flex items-center gap-2"><Award className="w-4 h-4 text-amber-400" /> Experience</h3>
@@ -1059,6 +1113,20 @@ const ProfileView = ({ user, onEdit }) => {
             ))}
           </div>
         </div>
+      </div>
+
+      {/* My teams */}
+      <div>
+        <h3 className="font-bold mb-4 flex items-center gap-2"><Layers className="w-4 h-4 text-purple-400" /> My teams</h3>
+        {teams === null ? (
+          <div className="grid md:grid-cols-2 gap-4">{Array.from({ length: 2 }).map((_, i) => <div key={i} className="glass rounded-2xl h-32 animate-pulse" />)}</div>
+        ) : teams.length === 0 ? (
+          <div className="glass rounded-2xl p-8 text-center text-white/50 text-sm">You haven't joined or created a team yet.</div>
+        ) : (
+          <div className="grid md:grid-cols-2 gap-4">
+            {teams.map((t) => <TeamCard key={t.id} team={t} mine onOpen={() => onOpenTeam(t.id)} />)}
+          </div>
+        )}
       </div>
 
       {/* GitHub stats */}
