@@ -828,17 +828,20 @@ const AppShell = ({ user, view, setView, onLogout, children }) => (
               { k: 'dashboard', l: 'Dashboard', i: Layers },
               { k: 'matches', l: 'Matches', i: Heart },
               { k: 'teams', l: 'Teams', i: Users },
-              { k: 'profile', l: 'Profile', i: Award },
             ].map((t) => (
               <button key={t.k} onClick={() => setView(t.k)}
                 className={`px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 transition ${view === t.k || (t.k === 'teams' && view === 'team') ? 'bg-white/10 text-white' : 'text-white/60 hover:text-white hover:bg-white/5'}`}>
                 <t.i className="w-3.5 h-3.5" /> {t.l}
               </button>
             ))}
-            <MessagesNavButton active={view === 'messages' || view === 'dm'} onClick={() => setView('messages')} />
             <a href="/hackathons" className="px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 transition text-white/60 hover:text-white hover:bg-white/5">
               <Trophy className="w-3.5 h-3.5" /> Hackathons
             </a>
+            <MessagesNavButton active={view === 'messages' || view === 'dm'} onClick={() => setView('messages')} />
+            <button onClick={() => setView('profile')}
+              className={`px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 transition ${view === 'profile' ? 'bg-white/10 text-white' : 'text-white/60 hover:text-white hover:bg-white/5'}`}>
+              <Award className="w-3.5 h-3.5" /> Profile
+            </button>
           </div>
         </div>
         <div className="flex items-center gap-2">
