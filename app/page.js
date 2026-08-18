@@ -598,7 +598,6 @@ const AuthForm = ({ tab, setTab, onSuccess }) => {
           <Button onClick={() => submit('login')} disabled={loading} className="w-full gradient-button text-white border-0 h-11">
             {loading ? 'Signing in...' : 'Sign in'} <ArrowRight className="w-4 h-4 ml-1" />
           </Button>
-          <p className="text-xs text-white/40 text-center pt-2">Demo: <span className="text-purple-300">aarav@demo.dev</span> / <span className="text-purple-300">demo1234</span></p>
         </TabsContent>
         <TabsContent value="register" className="space-y-3">
           <Input placeholder="Full name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="bg-white/5 border-white/10 h-11" />
