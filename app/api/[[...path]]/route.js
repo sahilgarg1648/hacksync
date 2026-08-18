@@ -278,16 +278,31 @@ async function handle(req, { params }) {
       const u = getUserFromToken(req);
       if (!u) return err('Unauthorized', 401);
       const data = await req.json();
+      const sanitizeTags = (arr, maxLen = 30, maxCount = 20) => {
+        if (!Array.isArray(arr)) return [];
+        const seen = new Set();
+        const out = [];
+        for (const raw of arr) {
+          if (typeof raw !== 'string') continue;
+          const v = raw.trim().slice(0, maxLen);
+          const key = v.toLowerCase();
+          if (!v || seen.has(key)) continue;
+          seen.add(key);
+          out.push(v);
+          if (out.length >= maxCount) break;
+        }
+        return out;
+      };
       const update = {
         college: data.college || '',
         year: data.year || '',
         bio: data.bio || '',
         avatar: data.avatar || '',
-        skills: Array.isArray(data.skills) ? data.skills : [],
-        interests: Array.isArray(data.interests) ? data.interests : [],
+        skills: sanitizeTags(data.skills),
+        interests: sanitizeTags(data.interests),
         github: data.github || '',
         linkedin: data.linkedin || '',
-        availability: Array.isArray(data.availability) ? data.availability : [],
+        availability: sanitizeTags(data.availability),
         experience: data.experience || 'beginner',
         profileComplete: true, updatedAt: new Date(),
       };

@@ -633,7 +633,19 @@ const Onboarding = ({ user, onSave, onClose }) => {
     availability: user?.availability || [], experience: user?.experience || 'beginner',
   });
   const [saving, setSaving] = useState(false);
+  const [customSkill, setCustomSkill] = useState('');
+  const [customInterest, setCustomInterest] = useState('');
   const toggleArr = (k, v) => setData((d) => ({ ...d, [k]: d[k].includes(v) ? d[k].filter((x) => x !== v) : [...d[k], v] }));
+  const addCustom = (k, value, reset) => {
+    const v = value.trim().slice(0, 30);
+    if (!v) return;
+    setData((d) => {
+      if (d[k].some((x) => x.toLowerCase() === v.toLowerCase())) return d;
+      if (d[k].length >= 20) { toast.error('Max 20 — remove one first'); return d; }
+      return { ...d, [k]: [...d[k], v] };
+    });
+    reset('');
+  };
   const save = async () => {
     setSaving(true);
     try { const res = await api('/profile', { method: 'PUT', body: JSON.stringify(data) }); onSave(res.user); }
@@ -691,6 +703,20 @@ const Onboarding = ({ user, onSave, onClose }) => {
                     {s} {data.skills.includes(s) && <Check className="w-3 h-3 inline ml-1" />}
                   </button>
                 ))}
+                {data.skills.filter((s) => !SKILLS.includes(s)).map((s) => (
+                  <button key={s} onClick={() => toggleArr('skills', s)}
+                    className="px-4 py-2 rounded-full border border-transparent text-sm bg-gradient-to-r from-purple-500 to-blue-500 text-white flex items-center gap-1">
+                    {s} <X className="w-3 h-3" />
+                  </button>
+                ))}
+              </div>
+              <div className="flex gap-2 mt-4">
+                <Input value={customSkill} onChange={(e) => setCustomSkill(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustom('skills', customSkill, setCustomSkill); } }}
+                  maxLength={30} placeholder="Not listed? Add your own skill..." className="bg-white/5 border-white/10 flex-1" />
+                <Button type="button" variant="outline" onClick={() => addCustom('skills', customSkill, setCustomSkill)} className="bg-white/5 border-white/10 flex-shrink-0">
+                  <Plus className="w-4 h-4" />
+                </Button>
               </div>
             </div>
           )}
@@ -704,6 +730,20 @@ const Onboarding = ({ user, onSave, onClose }) => {
                     {s} {data.interests.includes(s) && <Check className="w-3 h-3 inline ml-1" />}
                   </button>
                 ))}
+                {data.interests.filter((s) => !INTERESTS.includes(s)).map((s) => (
+                  <button key={s} onClick={() => toggleArr('interests', s)}
+                    className="px-4 py-2 rounded-full border border-transparent text-sm bg-gradient-to-r from-blue-500 to-cyan-400 text-white flex items-center gap-1">
+                    {s} <X className="w-3 h-3" />
+                  </button>
+                ))}
+              </div>
+              <div className="flex gap-2 mt-4">
+                <Input value={customInterest} onChange={(e) => setCustomInterest(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustom('interests', customInterest, setCustomInterest); } }}
+                  maxLength={30} placeholder="Not listed? Add your own interest..." className="bg-white/5 border-white/10 flex-1" />
+                <Button type="button" variant="outline" onClick={() => addCustom('interests', customInterest, setCustomInterest)} className="bg-white/5 border-white/10 flex-shrink-0">
+                  <Plus className="w-4 h-4" />
+                </Button>
               </div>
             </div>
           )}
