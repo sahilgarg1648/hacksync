@@ -20,7 +20,7 @@ import {
   Calendar, Clock, Award,
   Plus, X, Check, Layers, Heart, Send, Smile, MoreVertical,
   Server, Lightbulb, Flame, GitFork, Star, Zap, UserPlus, Loader2,
-  GraduationCap,
+  GraduationCap, Shield,
 } from 'lucide-react';
 
 // ---------- constants ----------
@@ -851,6 +851,11 @@ const AppShell = ({ user, view, setView, onLogout, children }) => (
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {user.isAdmin && (
+            <a href="/admin" className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 transition">
+              <Shield className="w-3.5 h-3.5" /> Admin
+            </a>
+          )}
           <NotificationInbox />
           <Avatar className="w-8 h-8 ring-1 ring-purple-500/40"><AvatarImage src={user.avatar} /><AvatarFallback>{user.name?.[0]}</AvatarFallback></Avatar>
           <Button size="icon" variant="ghost" onClick={onLogout} className="text-white/60 hover:text-white"><LogOut className="w-4 h-4" /></Button>
