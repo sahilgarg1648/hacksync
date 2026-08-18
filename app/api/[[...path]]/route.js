@@ -192,7 +192,7 @@ async function handle(req, { params }) {
         password: await bcrypt.hash(password, 8),
         name, profileComplete: false, createdAt: new Date(),
       });
-      const token = jwt.sign({ id, email: email.toLowerCase(), name }, JWT_SECRET, { expiresIn: '30d' });
+      const token = jwt.sign({ id, email: email.toLowerCase(), name }, JWT_SECRET, { expiresIn: '1d' });
       return json({ token, user: { id, email, name, profileComplete: false } });
     }
 
@@ -202,7 +202,7 @@ async function handle(req, { params }) {
       if (!user) return err('Invalid credentials', 401);
       const ok = await bcrypt.compare(password, user.password);
       if (!ok) return err('Invalid credentials', 401);
-      const token = jwt.sign({ id: user._id, email: user.email, name: user.name }, JWT_SECRET, { expiresIn: '30d' });
+      const token = jwt.sign({ id: user._id, email: user.email, name: user.name }, JWT_SECRET, { expiresIn: '1d' });
       const { password: _p, _id, ...safe } = user;
       return json({ token, user: { ...safe, id: user._id } });
     }
@@ -266,7 +266,7 @@ async function handle(req, { params }) {
         } else if (!user.googleId) {
           await db.collection('users').updateOne({ _id: user._id }, { $set: { googleId: profile.id, avatar: user.avatar || profile.picture } });
         }
-        const token = jwt.sign({ id: user._id, email: user.email, name: user.name }, JWT_SECRET, { expiresIn: '30d' });
+        const token = jwt.sign({ id: user._id, email: user.email, name: user.name }, JWT_SECRET, { expiresIn: '1d' });
         return NextResponse.redirect(`${BASE_URL}/?token=${token}`);
       } catch (e) {
         return NextResponse.redirect(`${BASE_URL}/?google_error=${encodeURIComponent(e.message)}`);

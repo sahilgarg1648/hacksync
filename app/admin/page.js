@@ -33,7 +33,13 @@ const api = async (path, opts = {}) => {
     headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(opts.headers || {}) },
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || 'Request failed');
+  if (!res.ok) {
+    if (res.status === 401 && token) {
+      localStorage.removeItem('token');
+      if (typeof window !== 'undefined') window.location.href = '/';
+    }
+    throw new Error(data.error || 'Request failed');
+  }
   return data;
 };
 
