@@ -369,12 +369,18 @@ async function handle(req, { params }) {
       const u = getUserFromToken(req);
       if (!u) return err('Unauthorized', 401);
       const data = await req.json();
-      if (!data.name) return err('Hackathon name is required');
+      const REQUIRED_FIELDS = {
+        name: 'Hackathon name', description: 'Description', college: 'College', banner: 'Banner image URL',
+        domain: 'Domain', prize: 'Prize', deadline: 'Deadline', participants: 'Expected participants',
+      };
+      for (const [field, label] of Object.entries(REQUIRED_FIELDS)) {
+        if (!String(data[field] || '').trim()) return err(`${label} is required`);
+      }
       const id = uuidv4();
       const h = {
-        _id: id, name: data.name, banner: data.banner || '', domain: data.domain || '', prize: data.prize || '',
-        deadline: data.deadline || '', participants: data.participants || '0', tag: 'New', status: 'active',
-        college: data.college || '', description: data.description || '',
+        _id: id, name: data.name.trim(), banner: data.banner.trim(), domain: data.domain.trim(), prize: data.prize.trim(),
+        deadline: data.deadline.trim(), participants: data.participants.trim(), tag: 'New', status: 'active',
+        college: data.college.trim(), description: data.description.trim(),
         registeredUserIds: [],
         verified: false, submittedBy: u.id, submitterName: u.name,
         createdAt: new Date(),

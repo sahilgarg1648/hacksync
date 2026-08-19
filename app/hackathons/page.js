@@ -78,11 +78,18 @@ const HackathonCard = ({ h, delay = 0 }) => (
   </motion.a>
 );
 
+const HACKATHON_REQUIRED_FIELDS = {
+  name: 'Hackathon name', description: 'Description', college: 'College', banner: 'Banner image URL',
+  domain: 'Domain', prize: 'Prize', deadline: 'Deadline', participants: 'Expected participants',
+};
+
 const SubmitHackathonForm = ({ onSubmitted }) => {
   const [data, setData] = useState({ name: '', banner: '', domain: '', prize: '', deadline: '', participants: '', college: '', description: '' });
   const [submitting, setSubmitting] = useState(false);
   const submit = async () => {
-    if (!data.name) return toast.error('Hackathon name required');
+    for (const [field, label] of Object.entries(HACKATHON_REQUIRED_FIELDS)) {
+      if (!data[field].trim()) return toast.error(`${label} is required`);
+    }
     setSubmitting(true);
     try {
       await api('/hackathons', { method: 'POST', body: JSON.stringify(data) });
@@ -93,17 +100,17 @@ const SubmitHackathonForm = ({ onSubmitted }) => {
   return (
     <div className="p-2">
       <h2 className="text-2xl font-bold mb-1">Submit a hackathon</h2>
-      <p className="text-sm text-white/60 mb-6">Know about a hackathon at your college? Add it here — an admin reviews every submission before it goes live.</p>
+      <p className="text-sm text-white/60 mb-6">Know about a hackathon at your college? Add it here — an admin reviews every submission before it goes live. All fields are required.</p>
       <div className="space-y-3">
         <Input placeholder="Hackathon name *" value={data.name} onChange={(e) => setData({ ...data, name: e.target.value })} className="bg-white/5 border-white/10 h-11" />
-        <Textarea placeholder="Short description (optional)" rows={2} value={data.description} onChange={(e) => setData({ ...data, description: e.target.value })} className="bg-white/5 border-white/10" />
-        <Input placeholder="College (optional)" value={data.college} onChange={(e) => setData({ ...data, college: e.target.value })} className="bg-white/5 border-white/10 h-11" />
-        <Input placeholder="Banner image URL (optional)" value={data.banner} onChange={(e) => setData({ ...data, banner: e.target.value })} className="bg-white/5 border-white/10 h-11" />
+        <Textarea placeholder="Short description *" rows={2} value={data.description} onChange={(e) => setData({ ...data, description: e.target.value })} className="bg-white/5 border-white/10" />
+        <Input placeholder="College *" value={data.college} onChange={(e) => setData({ ...data, college: e.target.value })} className="bg-white/5 border-white/10 h-11" />
+        <Input placeholder="Banner image URL *" value={data.banner} onChange={(e) => setData({ ...data, banner: e.target.value })} className="bg-white/5 border-white/10 h-11" />
         <div className="grid grid-cols-2 gap-2">
-          <Input placeholder="Domain (AI, Web3...)" value={data.domain} onChange={(e) => setData({ ...data, domain: e.target.value })} className="bg-white/5 border-white/10" />
-          <Input placeholder="Prize ($5,000)" value={data.prize} onChange={(e) => setData({ ...data, prize: e.target.value })} className="bg-white/5 border-white/10" />
-          <Input placeholder="Deadline (2026-09-01)" value={data.deadline} onChange={(e) => setData({ ...data, deadline: e.target.value })} className="bg-white/5 border-white/10" />
-          <Input placeholder="Expected participants" value={data.participants} onChange={(e) => setData({ ...data, participants: e.target.value })} className="bg-white/5 border-white/10" />
+          <Input placeholder="Domain (AI, Web3...) *" value={data.domain} onChange={(e) => setData({ ...data, domain: e.target.value })} className="bg-white/5 border-white/10" />
+          <Input placeholder="Prize ($5,000) *" value={data.prize} onChange={(e) => setData({ ...data, prize: e.target.value })} className="bg-white/5 border-white/10" />
+          <Input placeholder="Deadline (2026-09-01) *" value={data.deadline} onChange={(e) => setData({ ...data, deadline: e.target.value })} className="bg-white/5 border-white/10" />
+          <Input placeholder="Expected participants *" value={data.participants} onChange={(e) => setData({ ...data, participants: e.target.value })} className="bg-white/5 border-white/10" />
         </div>
         <Button onClick={submit} disabled={submitting} className="w-full gradient-button text-white border-0 h-11">
           {submitting ? 'Submitting...' : 'Submit for review'} <Sparkles className="w-4 h-4 ml-1" />
