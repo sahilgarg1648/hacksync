@@ -19,7 +19,7 @@ import {
   Code2, Rocket, ChevronRight, ArrowRight, Bell, LogOut,
   Calendar, Clock, Award,
   Plus, X, Check, Layers, Heart, Send, Smile, MoreVertical,
-  Server, Lightbulb, Flame, GitFork, Star, Zap, UserPlus, Loader2,
+  Server, Lightbulb, Flame, GitFork, Star, UserPlus, Loader2,
   GraduationCap, Shield, ShieldCheck,
 } from 'lucide-react';
 
@@ -204,7 +204,7 @@ export default function App() {
       api('/matches').then((d) => setMatches(d.matches)).catch((e) => toast.error(e.message)).finally(() => setLoadingMatches(false));
     }
     if (user?.profileComplete && view === 'teams') {
-      api('/teams').then((d) => setTeams(d.teams)).catch(() => {});
+      api('/teams?mine=true').then((d) => setTeams(d.teams)).catch(() => {});
     }
   }, [user, view]);
 
@@ -227,7 +227,7 @@ export default function App() {
     toast.success('Signed out');
   };
 
-  const refreshTeams = () => api('/teams').then((d) => setTeams(d.teams)).catch(() => {});
+  const refreshTeams = () => api('/teams?mine=true').then((d) => setTeams(d.teams)).catch(() => {});
 
   return (
     <div className="min-h-screen relative">
@@ -257,10 +257,9 @@ export default function App() {
               onOpenTeam={(id) => { setSelectedTeamId(id); setView('team'); }} />
           )}
           {view === 'teams' && (
-            <TeamsView teams={teams} user={user} hackathons={hackathons}
+            <TeamsView teams={teams}
               onCreate={() => setCreateTeamOpen(true)}
               onOpen={(id) => { setSelectedTeamId(id); setView('team'); }}
-              onRefresh={refreshTeams}
             />
           )}
           {view === 'team' && selectedTeamId && (
@@ -1331,9 +1330,8 @@ const DeveloperDetail = ({ dev, onConnect }) => (
 // ====================================================================
 // TEAMS VIEW
 // ====================================================================
-const TeamsView = ({ teams, user, onCreate, onOpen, onRefresh }) => {
-  const myTeams = teams.filter((t) => t.members.find((m) => m.userId === user.id));
-  const others = teams.filter((t) => !t.members.find((m) => m.userId === user.id));
+const TeamsView = ({ teams, onCreate, onOpen }) => {
+  const myTeams = teams;
   return (
     <div className="space-y-8">
       <div className="flex items-end justify-between">
@@ -1343,18 +1341,12 @@ const TeamsView = ({ teams, user, onCreate, onOpen, onRefresh }) => {
         </div>
         <Button onClick={onCreate} className="gradient-button text-white border-0"><Plus className="w-4 h-4 mr-1" /> Create team</Button>
       </div>
-      {myTeams.length > 0 && (
-        <div>
-          <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Layers className="w-5 h-5 text-purple-400" /> Your teams</h2>
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">{myTeams.map((t) => <TeamCard key={t.id} team={t} mine onOpen={() => onOpen(t.id)} />)}</div>
-        </div>
-      )}
       <div>
-        <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Zap className="w-5 h-5 text-cyan-400" /> Discover teams</h2>
-        {others.length === 0 ? (
-          <div className="glass rounded-2xl p-12 text-center text-white/50">No public teams yet. Be the first to create one!</div>
+        <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Layers className="w-5 h-5 text-purple-400" /> My teams</h2>
+        {myTeams.length === 0 ? (
+          <div className="glass rounded-2xl p-12 text-center text-white/50">You haven't joined or created a team yet.</div>
         ) : (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">{others.map((t) => <TeamCard key={t.id} team={t} onOpen={() => onOpen(t.id)} />)}</div>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">{myTeams.map((t) => <TeamCard key={t.id} team={t} mine onOpen={() => onOpen(t.id)} />)}</div>
         )}
       </div>
     </div>
