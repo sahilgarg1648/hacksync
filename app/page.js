@@ -1283,9 +1283,9 @@ const GitHubStats = ({ data }) => {
         {langData.length === 0 ? <div className="text-neutral-500 text-sm">No language data found.</div> : (
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={langData} layout="vertical" margin={{ left: 0, right: 20 }}>
-              <XAxis type="number" stroke="rgba(255,255,255,0.2)" fontSize={10} />
-              <YAxis dataKey="name" type="category" stroke="rgba(255,255,255,0.6)" fontSize={11} width={70} />
-              <Tooltip contentStyle={{ background: 'rgba(15,13,28,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8 }} />
+              <XAxis type="number" stroke="rgba(0,0,0,0.25)" fontSize={10} />
+              <YAxis dataKey="name" type="category" stroke="rgba(0,0,0,0.55)" fontSize={11} width={70} />
+              <Tooltip contentStyle={{ background: 'rgba(255,255,255,0.98)', border: '1px solid rgba(0,0,0,0.08)', color: '#171717', borderRadius: 8 }} />
               <Bar dataKey="count" radius={[0, 8, 8, 0]}>{langData.map((d, i) => <Cell key={i} fill={d.fill} />)}</Bar>
             </BarChart>
           </ResponsiveContainer>
