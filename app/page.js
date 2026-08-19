@@ -875,19 +875,21 @@ const AppShell = ({ user, view, setView, onLogout, children }) => (
             <span className="font-bold tracking-tight">HackSync</span>
           </button>
           <div className="hidden md:flex items-center gap-1">
-            {[
-              { k: 'dashboard', l: 'Dashboard', i: Layers },
-              { k: 'matches', l: 'Matches', i: Heart },
-              { k: 'teams', l: 'Teams', i: Users },
-            ].map((t) => (
-              <button key={t.k} onClick={() => setView(t.k)}
-                className={`px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 transition ${view === t.k || (t.k === 'teams' && view === 'team') ? 'bg-white/10 text-white' : 'text-white/60 hover:text-white hover:bg-white/5'}`}>
-                <t.i className="w-3.5 h-3.5" /> {t.l}
-              </button>
-            ))}
+            <button onClick={() => setView('dashboard')}
+              className={`px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 transition ${view === 'dashboard' ? 'bg-white/10 text-white' : 'text-white/60 hover:text-white hover:bg-white/5'}`}>
+              <Layers className="w-3.5 h-3.5" /> Dashboard
+            </button>
             <a href="/hackathons" className="px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 transition text-white/60 hover:text-white hover:bg-white/5">
               <Trophy className="w-3.5 h-3.5" /> Hackathons
             </a>
+            <button onClick={() => setView('teams')}
+              className={`px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 transition ${view === 'teams' || view === 'team' ? 'bg-white/10 text-white' : 'text-white/60 hover:text-white hover:bg-white/5'}`}>
+              <Users className="w-3.5 h-3.5" /> Teams
+            </button>
+            <button onClick={() => setView('matches')}
+              className={`px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 transition ${view === 'matches' ? 'bg-white/10 text-white' : 'text-white/60 hover:text-white hover:bg-white/5'}`}>
+              <Heart className="w-3.5 h-3.5" /> Matches
+            </button>
             <MessagesNavButton active={view === 'messages' || view === 'dm'} onClick={() => setView('messages')} />
             <button onClick={() => setView('profile')}
               className={`px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 transition ${view === 'profile' ? 'bg-white/10 text-white' : 'text-white/60 hover:text-white hover:bg-white/5'}`}>
