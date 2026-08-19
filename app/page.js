@@ -142,6 +142,7 @@ export default function App() {
   const [createTeamOpen, setCreateTeamOpen] = useState(false);
   const [submitHackathonOpen, setSubmitHackathonOpen] = useState(false);
   const [selectedDMUser, setSelectedDMUser] = useState(null);
+  const [initialMatchHackathonId, setInitialMatchHackathonId] = useState(null);
 
   const openConversationWith = (dev) => {
     if (!user) { setSelectedDev(null); setAuthTab('login'); setAuthOpen(true); return; }
@@ -198,6 +199,17 @@ export default function App() {
     }
   }, [user]);
 
+  // land on Matches, scoped to the hackathon just registered for, from the hackathon detail page (?view=matches&hackathon=<id>)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !user?.profileComplete) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('view') === 'matches') {
+      setInitialMatchHackathonId(params.get('hackathon'));
+      setView('matches');
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, [user]);
+
   useEffect(() => {
     if (user?.profileComplete && view === 'dashboard') {
       setLoadingMatches(true);
@@ -250,7 +262,8 @@ export default function App() {
           )}
           {view === 'matches' && (
             <MatchesView user={user} onViewDev={setSelectedDev} onMessage={openConversationWith}
-              onOpenTeam={(id) => { setSelectedTeamId(id); setView('team'); }} />
+              onOpenTeam={(id) => { setSelectedTeamId(id); setView('team'); }}
+              initialHackathonId={initialMatchHackathonId} />
           )}
           {view === 'profile' && (
             <ProfileView user={user} onEdit={() => setOnboardingOpen(true)}
@@ -1011,7 +1024,7 @@ const MatchCard = ({ m, onClick, onMessage, delay = 0 }) => {
 // ====================================================================
 // MATCHES VIEW
 // ====================================================================
-const MatchesView = ({ user, onViewDev, onMessage, onOpenTeam }) => {
+const MatchesView = ({ user, onViewDev, onMessage, onOpenTeam, initialHackathonId }) => {
   const [registered, setRegistered] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [data, setData] = useState(null);
@@ -1021,9 +1034,13 @@ const MatchesView = ({ user, onViewDev, onMessage, onOpenTeam }) => {
   useEffect(() => {
     api('/my/hackathons').then((d) => {
       setRegistered(d.hackathons);
-      if (d.hackathons.length > 0) setSelectedId(d.hackathons[0].id);
+      if (initialHackathonId && d.hackathons.some((h) => h.id === initialHackathonId)) {
+        setSelectedId(initialHackathonId);
+      } else if (d.hackathons.length > 0) {
+        setSelectedId(d.hackathons[0].id);
+      }
     }).catch(() => setRegistered([]));
-  }, []);
+  }, [initialHackathonId]);
 
   useEffect(() => {
     if (!selectedId) return;

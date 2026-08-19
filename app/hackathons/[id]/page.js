@@ -118,11 +118,17 @@ export default function HackathonDetailPage({ params }) {
 
   const toggleRegister = async () => {
     if (!requireAuth()) return;
+    const wasRegistered = data.hackathon.isRegistered;
     setRegistering(true);
     try {
-      const res = await api(`/hackathons/${id}/register`, { method: data.hackathon.isRegistered ? 'DELETE' : 'POST' });
+      const res = await api(`/hackathons/${id}/register`, { method: wasRegistered ? 'DELETE' : 'POST' });
       setData((d) => ({ ...d, hackathon: { ...d.hackathon, isRegistered: res.isRegistered, registeredCount: res.registeredCount } }));
-      toast.success(res.isRegistered ? "You're registered!" : 'Unregistered');
+      if (!wasRegistered && res.isRegistered) {
+        toast.success("You're registered! Here are your matches...");
+        router.push(`/?view=matches&hackathon=${id}`);
+      } else {
+        toast.success(res.isRegistered ? "You're registered!" : 'Unregistered');
+      }
     } catch (e) { toast.error(e.message); } finally { setRegistering(false); }
   };
 
