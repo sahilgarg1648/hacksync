@@ -416,6 +416,50 @@ async function handle(req, { params }) {
       if (!updated) return err('Hackathon not found', 404);
       return json({ ok: true, registeredCount: (updated.registeredUserIds || []).length, isRegistered: false });
     }
+
+    // Hackathons the current user is registered for
+    if (path === '/my/hackathons' && method === 'GET') {
+      const u = getUserFromToken(req);
+      if (!u) return err('Unauthorized', 401);
+      const list = await db.collection('hackathons').find({ registeredUserIds: u.id, verified: { $ne: false } }).sort({ createdAt: -1 }).toArray();
+      return json({ hackathons: list.map((h) => ({ ...h, id: h._id })) });
+    }
+
+    // Matches + teams scoped to a hackathon — only visible to users registered for it
+    if (path.match(/^\/hackathons\/[^/]+\/matches$/) && method === 'GET') {
+      const u = getUserFromToken(req);
+      if (!u) return err('Unauthorized', 401);
+      const id = segs[1];
+      const h = await db.collection('hackathons').findOne({ _id: id, verified: { $ne: false } });
+      if (!h) return err('Hackathon not found', 404);
+      const registeredIds = h.registeredUserIds || [];
+      if (!registeredIds.includes(u.id)) return err('Register for this hackathon to see matches for it', 403);
+      const me = await db.collection('users').findOne({ _id: u.id });
+      if (!me?.profileComplete) return err('Complete your profile first', 400);
+      const matchCfg = await db.collection('config').findOne({ _id: 'matching' });
+      const weights = matchCfg ? {
+        skillOverlap: matchCfg.skillOverlap ?? DEFAULT_MATCH_WEIGHTS.skillOverlap,
+        complementary: matchCfg.complementary ?? DEFAULT_MATCH_WEIGHTS.complementary,
+        interests: matchCfg.interests ?? DEFAULT_MATCH_WEIGHTS.interests,
+        availability: matchCfg.availability ?? DEFAULT_MATCH_WEIGHTS.availability,
+        experience: matchCfg.experience ?? DEFAULT_MATCH_WEIGHTS.experience,
+      } : DEFAULT_MATCH_WEIGHTS;
+      const otherIds = registeredIds.filter((rid) => rid !== u.id);
+      const others = await db.collection('users').find({ _id: { $in: otherIds }, profileComplete: true }).toArray();
+      const ranked = others
+        .map((o) => {
+          const { password, _id, ...r } = o;
+          const m = calculateMatch(me, o, weights);
+          return { developer: { ...r, id: _id }, ...m };
+        })
+        .sort((a, b) => b.score - a.score);
+      const teams = await db.collection('teams').find({ hackathonId: id }).sort({ createdAt: -1 }).toArray();
+      return json({
+        hackathon: { ...h, id: h._id, registeredCount: registeredIds.length },
+        matches: ranked,
+        teams: teams.map((t) => ({ ...t, id: t._id })),
+      });
+    }
     if (path === '/cms' && method === 'GET') {
       const cfg = await db.collection('config').findOne({ _id: 'cms' });
       return json({ cms: { ...DEFAULT_CMS, ...cfg } });
@@ -433,6 +477,11 @@ async function handle(req, { params }) {
       if (!u) return err('Unauthorized', 401);
       const { name, description, hackathonId, rolesNeeded } = await req.json();
       if (!name) return err('Team name is required');
+      if (hackathonId) {
+        const h = await db.collection('hackathons').findOne({ _id: hackathonId });
+        if (!h) return err('Hackathon not found', 404);
+        if (!(h.registeredUserIds || []).includes(u.id)) return err('Register for this hackathon before creating a team for it', 403);
+      }
       const me = await db.collection('users').findOne({ _id: u.id });
       const id = uuidv4();
       const team = {
@@ -480,6 +529,10 @@ async function handle(req, { params }) {
       if (!team) return err('Team not found', 404);
       if (team.members.find((m) => m.userId === u.id)) return err('Already a member', 400);
       if (team.joinRequests.find((r) => r.userId === u.id && r.status === 'pending')) return err('Request already pending', 400);
+      if (team.hackathonId) {
+        const h = await db.collection('hackathons').findOne({ _id: team.hackathonId });
+        if (h && !(h.registeredUserIds || []).includes(u.id)) return err('Register for this hackathon before requesting to join a team for it', 403);
+      }
       const me = await db.collection('users').findOne({ _id: u.id });
       await db.collection('teams').updateOne({ _id: teamId }, {
         $push: { joinRequests: { userId: u.id, name: me.name, avatar: me.avatar, message: msg || '', status: 'pending', createdAt: new Date() } },

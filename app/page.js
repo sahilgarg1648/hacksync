@@ -199,7 +199,7 @@ export default function App() {
   }, [user]);
 
   useEffect(() => {
-    if (user?.profileComplete && (view === 'dashboard' || view === 'matches')) {
+    if (user?.profileComplete && view === 'dashboard') {
       setLoadingMatches(true);
       api('/matches').then((d) => setMatches(d.matches)).catch((e) => toast.error(e.message)).finally(() => setLoadingMatches(false));
     }
@@ -248,7 +248,10 @@ export default function App() {
             <Dashboard user={user} matches={matches} hackathons={hackathons}
               onSubmitHackathon={() => setSubmitHackathonOpen(true)} />
           )}
-          {view === 'matches' && <MatchesView matches={matches} loading={loadingMatches} onViewDev={setSelectedDev} onMessage={openConversationWith} />}
+          {view === 'matches' && (
+            <MatchesView user={user} onViewDev={setSelectedDev} onMessage={openConversationWith}
+              onOpenTeam={(id) => { setSelectedTeamId(id); setView('team'); }} />
+          )}
           {view === 'profile' && (
             <ProfileView user={user} onEdit={() => setOnboardingOpen(true)}
               onOpenTeam={(id) => { setSelectedTeamId(id); setView('team'); }} />
@@ -292,7 +295,7 @@ export default function App() {
 
       <Dialog open={createTeamOpen} onOpenChange={setCreateTeamOpen}>
         <DialogContent className="sm:max-w-lg glass-strong border-white/10">
-          <CreateTeamForm hackathons={hackathons} onCreated={(t) => { setCreateTeamOpen(false); refreshTeams(); setSelectedTeamId(t.id || t._id); setView('team'); }} />
+          <CreateTeamForm onCreated={(t) => { setCreateTeamOpen(false); refreshTeams(); setSelectedTeamId(t.id || t._id); setView('team'); }} />
         </DialogContent>
       </Dialog>
 
@@ -1007,24 +1010,98 @@ const MatchCard = ({ m, onClick, onMessage, delay = 0 }) => {
 // ====================================================================
 // MATCHES VIEW
 // ====================================================================
-const MatchesView = ({ matches, loading, onViewDev, onMessage }) => {
+const MatchesView = ({ user, onViewDev, onMessage, onOpenTeam }) => {
+  const [registered, setRegistered] = useState(null);
+  const [selectedId, setSelectedId] = useState(null);
+  const [data, setData] = useState(null);
+  const [loadingData, setLoadingData] = useState(false);
   const [filter, setFilter] = useState('all');
+
+  useEffect(() => {
+    api('/my/hackathons').then((d) => {
+      setRegistered(d.hackathons);
+      if (d.hackathons.length > 0) setSelectedId(d.hackathons[0].id);
+    }).catch(() => setRegistered([]));
+  }, []);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    setLoadingData(true);
+    setFilter('all');
+    api(`/hackathons/${selectedId}/matches`).then(setData).catch(() => setData({ matches: [], teams: [] })).finally(() => setLoadingData(false));
+  }, [selectedId]);
+
+  if (registered === null) {
+    return <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="glass rounded-2xl h-64 animate-pulse" />)}</div>;
+  }
+
+  if (registered.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl md:text-4xl font-bold tracking-tight">Your matches</h1>
+          <p className="text-white/60 mt-2">Register for a hackathon to see compatible teammates and teams for it.</p>
+        </div>
+        <div className="glass rounded-2xl p-12 text-center text-white/50">
+          <Trophy className="w-10 h-10 mx-auto mb-3 text-white/20" />
+          <p className="mb-4">You're not registered for any hackathons yet.</p>
+          <a href="/hackathons"><Button className="gradient-button text-white border-0">Browse hackathons</Button></a>
+        </div>
+      </div>
+    );
+  }
+
+  const matches = data?.matches || [];
+  const teams = data?.teams || [];
   const filtered = matches.filter((m) => filter === 'all' || (filter === 'top' && m.score >= 80) || (filter === 'great' && m.score >= 60));
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl md:text-4xl font-bold tracking-tight">Your matches</h1>
-        <p className="text-white/60 mt-2">{matches.length} compatible developers, ranked by our matching engine.</p>
+        <p className="text-white/60 mt-2">Compatible teammates and teams, per hackathon you're registered for.</p>
       </div>
-      <div className="flex gap-2">
-        {[{ k: 'all', l: `All (${matches.length})` }, { k: 'top', l: `Top match (${matches.filter((m) => m.score >= 80).length})` }, { k: 'great', l: `Great + (${matches.filter((m) => m.score >= 60).length})` }].map((f) => (
-          <Button key={f.k} onClick={() => setFilter(f.k)} variant={filter === f.k ? 'default' : 'outline'} size="sm" className={filter === f.k ? 'gradient-button text-white border-0' : 'bg-white/5 border-white/10 hover:bg-white/10'}>{f.l}</Button>
+
+      <div className="flex gap-2 flex-wrap">
+        {registered.map((h) => (
+          <button key={h.id} onClick={() => setSelectedId(h.id)}
+            className={`px-4 py-2 rounded-full border text-sm transition ${selectedId === h.id ? 'bg-gradient-to-r from-purple-500 to-blue-500 border-transparent text-white' : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10'}`}>
+            {h.name}
+          </button>
         ))}
       </div>
-      {loading ? (
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">{Array.from({ length: 9 }).map((_, i) => <div key={i} className="glass rounded-2xl h-64 animate-pulse" />)}</div>
+
+      {loadingData ? (
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="glass rounded-2xl h-64 animate-pulse" />)}</div>
       ) : (
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">{filtered.map((m, i) => <MatchCard key={m.developer.id} m={m} onClick={() => onViewDev(m.developer)} onMessage={() => onMessage(m.developer)} delay={i * 0.03} />)}</div>
+        <>
+          <div>
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+              <h2 className="text-lg font-bold flex items-center gap-2"><Sparkles className="w-4 h-4 text-purple-400" /> Matches for this hackathon</h2>
+              <div className="flex gap-2">
+                {[{ k: 'all', l: `All (${matches.length})` }, { k: 'top', l: `Top (${matches.filter((m) => m.score >= 80).length})` }, { k: 'great', l: `Great+ (${matches.filter((m) => m.score >= 60).length})` }].map((f) => (
+                  <Button key={f.k} onClick={() => setFilter(f.k)} variant={filter === f.k ? 'default' : 'outline'} size="sm" className={filter === f.k ? 'gradient-button text-white border-0' : 'bg-white/5 border-white/10 hover:bg-white/10'}>{f.l}</Button>
+                ))}
+              </div>
+            </div>
+            {matches.length === 0 ? (
+              <div className="glass rounded-2xl p-8 text-center text-white/50 text-sm">No one else has registered for this hackathon yet.</div>
+            ) : (
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">{filtered.map((m, i) => <MatchCard key={m.developer.id} m={m} onClick={() => onViewDev(m.developer)} onMessage={() => onMessage(m.developer)} delay={i * 0.03} />)}</div>
+            )}
+          </div>
+
+          <div>
+            <h2 className="text-lg font-bold mb-4 flex items-center gap-2"><Layers className="w-4 h-4 text-cyan-400" /> Teams for this hackathon</h2>
+            {teams.length === 0 ? (
+              <div className="glass rounded-2xl p-8 text-center text-white/50 text-sm">No teams yet — be the first to create one.</div>
+            ) : (
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {teams.map((t) => <TeamCard key={t.id} team={t} mine={t.members?.some((m) => m.userId === user.id)} onOpen={() => onOpenTeam(t.id)} />)}
+              </div>
+            )}
+          </div>
+        </>
       )}
     </div>
   );
@@ -1309,9 +1386,11 @@ const TeamCard = ({ team, mine, onOpen }) => (
 // ====================================================================
 // CREATE TEAM FORM
 // ====================================================================
-const CreateTeamForm = ({ hackathons, onCreated }) => {
+const CreateTeamForm = ({ onCreated }) => {
   const [data, setData] = useState({ name: '', description: '', hackathonId: '', rolesNeeded: [] });
   const [creating, setCreating] = useState(false);
+  const [registered, setRegistered] = useState(null);
+  useEffect(() => { api('/my/hackathons').then((d) => setRegistered(d.hackathons)).catch(() => setRegistered([])); }, []);
   const toggleRole = (r) => setData((d) => ({ ...d, rolesNeeded: d.rolesNeeded.includes(r) ? d.rolesNeeded.filter((x) => x !== r) : [...d.rolesNeeded, r] }));
   const submit = async () => {
     if (!data.name) return toast.error('Team name required');
@@ -1327,13 +1406,16 @@ const CreateTeamForm = ({ hackathons, onCreated }) => {
         <Input placeholder="Team name *" value={data.name} onChange={(e) => setData({ ...data, name: e.target.value })} className="bg-white/5 border-white/10 h-11" />
         <Textarea placeholder="What are you building?" rows={3} value={data.description} onChange={(e) => setData({ ...data, description: e.target.value })} className="bg-white/5 border-white/10" />
         <div>
-          <label className="text-xs text-white/60 mb-2 block">Hackathon (optional)</label>
+          <label className="text-xs text-white/60 mb-2 block">Hackathon (optional — only ones you're registered for)</label>
           <div className="grid grid-cols-2 gap-2">
             <button onClick={() => setData({ ...data, hackathonId: '' })} className={`p-2 rounded-lg border text-xs ${!data.hackathonId ? 'bg-purple-500/20 border-purple-400' : 'bg-white/5 border-white/10'}`}>None</button>
-            {hackathons.slice(0, 3).map((h) => (
+            {(registered || []).slice(0, 5).map((h) => (
               <button key={h.id} onClick={() => setData({ ...data, hackathonId: h.id })} className={`p-2 rounded-lg border text-xs truncate ${data.hackathonId === h.id ? 'bg-purple-500/20 border-purple-400' : 'bg-white/5 border-white/10'}`}>{h.name}</button>
             ))}
           </div>
+          {registered?.length === 0 && (
+            <p className="text-[11px] text-white/40 mt-2">You're not registered for any hackathons yet — <a href="/hackathons" className="text-purple-300 underline">browse hackathons</a> to tag your team to one.</p>
+          )}
         </div>
         <div>
           <label className="text-xs text-white/60 mb-2 block">Roles needed</label>

@@ -110,6 +110,12 @@ export default function HackathonDetailPage({ params }) {
     return true;
   };
 
+  const requireRegistration = () => {
+    if (!requireAuth()) return false;
+    if (!data.hackathon.isRegistered) { toast.error('Register for this hackathon first'); return false; }
+    return true;
+  };
+
   const toggleRegister = async () => {
     if (!requireAuth()) return;
     setRegistering(true);
@@ -121,13 +127,13 @@ export default function HackathonDetailPage({ params }) {
   };
 
   const joinTeam = async (teamId) => {
-    if (!requireAuth()) return;
+    if (!requireRegistration()) return;
     setJoiningId(teamId);
     try { await api(`/teams/${teamId}/join`, { method: 'POST', body: JSON.stringify({ message: '' }) }); toast.success('Join request sent!'); }
     catch (e) { toast.error(e.message); } finally { setJoiningId(null); }
   };
 
-  const onCreateClick = () => { if (requireAuth()) setCreateOpen(true); };
+  const onCreateClick = () => { if (requireRegistration()) setCreateOpen(true); };
 
   if (loading) {
     return (
@@ -207,7 +213,7 @@ export default function HackathonDetailPage({ params }) {
           </div>
         )}
 
-        <div className="flex flex-col sm:flex-row gap-3 mb-10">
+        <div className="flex flex-col sm:flex-row gap-3">
           <Button onClick={toggleRegister} disabled={registering} size="lg"
             className={h.isRegistered ? 'flex-1 bg-white/5 border border-white/10 hover:bg-white/10 h-12' : 'flex-1 gradient-button text-white border-0 h-12'}>
             {h.isRegistered ? <><CheckCircle2 className="w-4 h-4 mr-2" /> Registered — click to unregister</> : <><UserPlus className="w-4 h-4 mr-2" /> Register for this hackathon</>}
@@ -216,6 +222,10 @@ export default function HackathonDetailPage({ params }) {
             <Plus className="w-4 h-4 mr-2" /> Create a team
           </Button>
         </div>
+        {!h.isRegistered && (
+          <p className="text-xs text-white/40 mt-2 mb-8">Register above before you can create or join a team for this hackathon.</p>
+        )}
+        {h.isRegistered && <div className="mb-10" />}
 
         <div>
           <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Trophy className="w-5 h-5 text-amber-400" /> Teams building for this hackathon</h2>
