@@ -245,9 +245,8 @@ export default function App() {
       {(view === 'dashboard' || view === 'matches' || view === 'profile' || view === 'teams' || view === 'team' || view === 'messages' || view === 'dm') && user && (
         <AppShell user={user} view={view} setView={(v) => { setView(v); if (v !== 'team') setSelectedTeamId(null); if (v !== 'dm') setSelectedDMUser(null); }} onLogout={logout}>
           {view === 'dashboard' && (
-            <Dashboard user={user} matches={matches} hackathons={hackathons} loading={loadingMatches}
-              onViewMatches={() => setView('matches')} onViewDev={setSelectedDev}
-              onSubmitHackathon={() => setSubmitHackathonOpen(true)} onMessage={openConversationWith} />
+            <Dashboard user={user} matches={matches} hackathons={hackathons}
+              onSubmitHackathon={() => setSubmitHackathonOpen(true)} />
           )}
           {view === 'matches' && <MatchesView matches={matches} loading={loadingMatches} onViewDev={setSelectedDev} onMessage={openConversationWith} />}
           {view === 'profile' && (
@@ -912,14 +911,13 @@ const AppShell = ({ user, view, setView, onLogout, children }) => (
 // ====================================================================
 // DASHBOARD
 // ====================================================================
-const Dashboard = ({ user, matches, hackathons, loading, onViewMatches, onViewDev, onSubmitHackathon, onMessage }) => {
-  const top = matches.slice(0, 6);
+const Dashboard = ({ user, matches, hackathons, onSubmitHackathon }) => {
   return (
     <div className="space-y-8">
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
         <div className="text-sm text-white/50 mb-1">Welcome back</div>
         <h1 className="text-3xl md:text-4xl font-bold tracking-tight">Hey {user.name?.split(' ')[0]} 👋</h1>
-        <p className="text-white/60 mt-2">Here are your top matches and what's happening in the community.</p>
+        <p className="text-white/60 mt-2">Here's what's happening in the community.</p>
       </motion.div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
@@ -937,39 +935,23 @@ const Dashboard = ({ user, matches, hackathons, loading, onViewMatches, onViewDe
         ))}
       </div>
       <div>
-        <div className="flex items-end justify-between mb-5">
+        <div className="flex items-end justify-between mb-5 flex-wrap gap-3">
           <div>
-            <h2 className="text-xl font-bold flex items-center gap-2"><Sparkles className="w-5 h-5 text-purple-400" /> Recommended teammates</h2>
-            <p className="text-sm text-white/50 mt-1">Based on complementary skills, shared interests & availability.</p>
+            <h2 className="text-xl font-bold flex items-center gap-2"><Trophy className="w-5 h-5 text-amber-400" /> Trending hackathons</h2>
+            <p className="text-sm text-white/50 mt-1">Pick an event, register, and start building.</p>
           </div>
-          <Button variant="ghost" onClick={onViewMatches} className="text-purple-300 hover:text-white">See all <ArrowRight className="w-4 h-4 ml-1" /></Button>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" onClick={onSubmitHackathon} className="text-purple-300 hover:text-white"><Plus className="w-4 h-4 mr-1" /> Submit a hackathon</Button>
+            <a href="/hackathons"><Button variant="outline" className="bg-white/5 border-white/10 hover:bg-white/10">See all <ArrowRight className="w-4 h-4 ml-1" /></Button></a>
+          </div>
         </div>
-        {loading ? (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="glass rounded-2xl p-5 h-56 animate-pulse" />)}</div>
+        {hackathons.length === 0 ? (
+          <div className="glass rounded-2xl p-12 text-center text-white/50">No hackathons yet — be the first to submit one.</div>
         ) : (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">{top.map((m, i) => <MatchCard key={m.developer.id} m={m} onClick={() => onViewDev(m.developer)} onMessage={() => onMessage(m.developer)} delay={i * 0.04} />)}</div>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {hackathons.slice(0, 6).map((h, i) => <HackathonCard key={h.id} h={h} delay={i * 0.05} />)}
+          </div>
         )}
-      </div>
-      <div>
-        <div className="flex items-end justify-between mb-5">
-          <h2 className="text-xl font-bold flex items-center gap-2"><Trophy className="w-5 h-5 text-amber-400" /> Trending hackathons</h2>
-          <Button variant="ghost" onClick={onSubmitHackathon} className="text-purple-300 hover:text-white"><Plus className="w-4 h-4 mr-1" /> Submit a hackathon</Button>
-        </div>
-        <div className="grid md:grid-cols-2 gap-4">
-          {hackathons.slice(0, 4).map((h, i) => (
-            <motion.a key={h.id} href={`/hackathons/${h.id}`} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }} className="glass rounded-2xl overflow-hidden flex group cursor-pointer">
-              <div className="w-32 h-32 flex-shrink-0">
-                {h.banner ? <img src={h.banner} alt={h.name} className="w-full h-full object-cover group-hover:scale-105 transition" /> : <div className="w-full h-full bg-gradient-to-br from-purple-600/40 via-blue-600/30 to-cyan-500/30 flex items-center justify-center"><Trophy className="w-6 h-6 text-white/30" /></div>}
-              </div>
-              <div className="p-4 flex-1">
-                <Badge className="bg-purple-500/20 text-purple-300 border-0 text-[10px] mb-1">{h.tag}</Badge>
-                <h3 className="font-bold">{h.name}</h3>
-                <p className="text-xs text-white/50 mt-1">{h.domain} · {h.deadline}</p>
-                <div className="font-bold gradient-text mt-2">{h.prize}</div>
-              </div>
-            </motion.a>
-          ))}
-        </div>
       </div>
     </div>
   );
