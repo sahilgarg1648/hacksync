@@ -23,7 +23,7 @@ function generateOTP() {
 
 async function sendOtpEmail(email, name, otp) {
   if (!resend) throw new Error('Email sending is not configured');
-  await resend.emails.send({
+  const { error } = await resend.emails.send({
     from: 'HackSync <onboarding@resend.dev>',
     to: email,
     subject: `${otp} is your HackSync verification code`,
@@ -36,6 +36,9 @@ async function sendOtpEmail(email, name, otp) {
       </div>
     `,
   });
+  // The Resend SDK returns { error } instead of throwing on API-level failures
+  // (e.g. sandbox domain restrictions, invalid recipient) — must check explicitly.
+  if (error) throw new Error(error.message || 'Email send failed');
 }
 
 const DEFAULT_CMS = {
