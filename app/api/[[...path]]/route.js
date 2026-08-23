@@ -847,7 +847,10 @@ async function handle(req, { params }) {
         return true;
       };
       const all = await db.collection('notifications').find({}).sort({ createdAt: -1 }).limit(30).toArray();
-      const relevant = all.filter(matchesAudience).map((n) => ({ ...n, id: n._id, read: (n.readBy || []).includes(u.id) }));
+      const relevant = all
+        .filter((n) => !me?.createdAt || new Date(n.createdAt) >= new Date(me.createdAt))
+        .filter(matchesAudience)
+        .map((n) => ({ ...n, id: n._id, read: (n.readBy || []).includes(u.id) }));
       return json({ notifications: relevant, unreadCount: relevant.filter((n) => !n.read).length });
     }
 
