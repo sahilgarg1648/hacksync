@@ -4,15 +4,18 @@ import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
-import { Resend } from 'resend';
+import nodemailer from 'nodemailer';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL;
-const RESEND_API_KEY = process.env.RESEND_API_KEY;
-const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
+const EMAIL_USER = process.env.EMAIL_USER;
+const EMAIL_PASS = process.env.EMAIL_PASS;
+const mailer = (EMAIL_USER && EMAIL_PASS)
+  ? nodemailer.createTransport({ service: 'gmail', auth: { user: EMAIL_USER, pass: EMAIL_PASS } })
+  : null;
 const OTP_TTL_MS = 10 * 60 * 1000;
 const OTP_RESEND_COOLDOWN_S = 45;
 const OTP_MAX_ATTEMPTS = 5;
@@ -22,9 +25,9 @@ function generateOTP() {
 }
 
 async function sendOtpEmail(email, name, otp) {
-  if (!resend) throw new Error('Email sending is not configured');
-  const { error } = await resend.emails.send({
-    from: 'HackSync <onboarding@resend.dev>',
+  if (!mailer) throw new Error('Email sending is not configured');
+  await mailer.sendMail({
+    from: `HackSync <${EMAIL_USER}>`,
     to: email,
     subject: `${otp} is your HackSync verification code`,
     html: `
@@ -36,9 +39,6 @@ async function sendOtpEmail(email, name, otp) {
       </div>
     `,
   });
-  // The Resend SDK returns { error } instead of throwing on API-level failures
-  // (e.g. sandbox domain restrictions, invalid recipient) — must check explicitly.
-  if (error) throw new Error(error.message || 'Email send failed');
 }
 
 const DEFAULT_CMS = {
