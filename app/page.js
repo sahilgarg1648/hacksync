@@ -607,15 +607,77 @@ const FloatingMatchPreview = () => (
 // ====================================================================
 // AUTH FORM (with Google OAuth)
 // ====================================================================
+const OTP_RESEND_COOLDOWN_S = 45;
+
+const VerifyOtpStep = ({ email, onSuccess, onBack }) => {
+  const [code, setCode] = useState('');
+  const [verifying, setVerifying] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [cooldown, setCooldown] = useState(OTP_RESEND_COOLDOWN_S);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setInterval(() => setCooldown((c) => c - 1), 1000);
+    return () => clearInterval(t);
+  }, [cooldown]);
+
+  const verify = async () => {
+    if (verifying || code.trim().length !== 6) return;
+    setVerifying(true);
+    try {
+      const data = await api('/auth/verify-otp', { method: 'POST', body: JSON.stringify({ email, otp: code.trim() }) });
+      onSuccess(data);
+    } catch (e) { toast.error(e.message); } finally { setVerifying(false); }
+  };
+
+  const resend = async () => {
+    if (resending || cooldown > 0) return;
+    setResending(true);
+    try {
+      await api('/auth/resend-otp', { method: 'POST', body: JSON.stringify({ email }) });
+      toast.success('New code sent');
+      setCooldown(OTP_RESEND_COOLDOWN_S);
+    } catch (e) { toast.error(e.message); } finally { setResending(false); }
+  };
+
+  return (
+    <div className="p-8">
+      <button onClick={onBack} className="text-xs text-neutral-500 hover:text-neutral-900 flex items-center gap-1 mb-4"><ChevronRight className="w-3 h-3 rotate-180" /> Back</button>
+      <div className="flex items-center gap-2 mb-2">
+        <div className="w-9 h-9 rounded-xl bg-neutral-100 flex items-center justify-center"><Sparkles className="w-5 h-5" /></div>
+        <div>
+          <h2 className="font-bold text-lg">Check your email</h2>
+          <p className="text-xs text-neutral-500">Code sent to {email}</p>
+        </div>
+      </div>
+      <p className="text-sm text-neutral-500 mt-4 mb-4">Enter the 6-digit code to finish creating your account.</p>
+      <Input
+        placeholder="000000" inputMode="numeric" maxLength={6}
+        value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+        onKeyDown={(e) => { if (e.key === 'Enter') verify(); }}
+        className="bg-neutral-100 border-neutral-200 h-14 text-center text-2xl tracking-[0.5em] font-bold"
+      />
+      <Button onClick={verify} disabled={verifying || code.length !== 6} className="w-full gradient-button text-white border-0 h-11 mt-4">
+        {verifying ? 'Verifying...' : 'Verify & create account'} <ArrowRight className="w-4 h-4 ml-1" />
+      </Button>
+      <button onClick={resend} disabled={resending || cooldown > 0} className="w-full text-center text-sm text-neutral-500 mt-4 disabled:opacity-50 hover:text-neutral-900">
+        {cooldown > 0 ? `Resend code in ${cooldown}s` : resending ? 'Sending...' : 'Resend code'}
+      </button>
+    </div>
+  );
+};
+
 const AuthForm = ({ tab, setTab, onSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({ name: '', email: '', password: '' });
+  const [pendingEmail, setPendingEmail] = useState(null);
   const submit = async (kind) => {
     if (loading) return;
     setLoading(true);
     try {
       const data = await api(`/auth/${kind}`, { method: 'POST', body: JSON.stringify(form) });
-      onSuccess(data);
+      if (data.pending) { setPendingEmail(data.email); toast.success('Verification code sent to your email'); }
+      else onSuccess(data);
     } catch (e) { toast.error(e.message); } finally { setLoading(false); }
   };
   const googleSignIn = async () => {
@@ -624,6 +686,11 @@ const AuthForm = ({ tab, setTab, onSuccess }) => {
       window.location.href = url;
     } catch (e) { toast.error('Google sign-in unavailable'); }
   };
+
+  if (pendingEmail) {
+    return <VerifyOtpStep email={pendingEmail} onSuccess={onSuccess} onBack={() => setPendingEmail(null)} />;
+  }
+
   return (
     <div className="p-8">
       <div className="flex items-center gap-2 mb-6">
@@ -661,7 +728,7 @@ const AuthForm = ({ tab, setTab, onSuccess }) => {
           <Input placeholder="Email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="bg-neutral-100 border-neutral-200 h-11" />
           <Input placeholder="Password (min 6 chars)" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="bg-neutral-100 border-neutral-200 h-11" />
           <Button onClick={() => submit('register')} disabled={loading} className="w-full gradient-button text-white border-0 h-11">
-            {loading ? 'Creating...' : 'Create account'} <Rocket className="w-4 h-4 ml-1" />
+            {loading ? 'Sending code...' : 'Create account'} <Rocket className="w-4 h-4 ml-1" />
           </Button>
         </TabsContent>
       </Tabs>

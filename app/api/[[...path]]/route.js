@@ -3,12 +3,40 @@ import { getDb } from '@/lib/mongodb';
 import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
+import { Resend } from 'resend';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL;
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
+const OTP_TTL_MS = 10 * 60 * 1000;
+const OTP_RESEND_COOLDOWN_S = 45;
+const OTP_MAX_ATTEMPTS = 5;
+
+function generateOTP() {
+  return String(crypto.randomInt(100000, 1000000));
+}
+
+async function sendOtpEmail(email, name, otp) {
+  if (!resend) throw new Error('Email sending is not configured');
+  await resend.emails.send({
+    from: 'HackSync <onboarding@resend.dev>',
+    to: email,
+    subject: `${otp} is your HackSync verification code`,
+    html: `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+        <h2 style="color: #171717; margin: 0 0 12px;">Verify your email</h2>
+        <p style="color: #525252; font-size: 14px; line-height: 1.5;">Hi ${name || 'there'}, use this code to finish signing up for HackSync:</p>
+        <div style="font-size: 32px; font-weight: 700; letter-spacing: 8px; color: #4f46e5; margin: 24px 0;">${otp}</div>
+        <p style="color: #a3a3a3; font-size: 12px;">This code expires in 10 minutes. If you didn't request this, you can safely ignore this email.</p>
+      </div>
+    `,
+  });
+}
 
 const DEFAULT_CMS = {
   _id: 'cms',
@@ -105,6 +133,8 @@ async function ensureSeed(db) {
   // not on every request.
   if (seedEnsured) return;
   await db.collection('users').createIndex({ email: 1 }, { unique: true });
+  // auto-clean abandoned signups (OTP itself expires after 10 min; this just clears the doc)
+  await db.collection('pending_registrations').createIndex({ createdAt: 1 }, { expireAfterSeconds: 1800 });
   seedEnsured = true;
 }
 
@@ -201,16 +231,86 @@ async function handle(req, { params }) {
     if (path === '/auth/register' && method === 'POST') {
       const { email, password, name } = await req.json();
       if (!email || !password || !name) return err('Missing fields');
-      const exists = await db.collection('users').findOne({ email: email.toLowerCase() });
+      if (password.length < 6) return err('Password must be at least 6 characters');
+      const normalizedEmail = email.toLowerCase().trim();
+      const exists = await db.collection('users').findOne({ email: normalizedEmail });
       if (exists) return err('Email already registered', 409);
+
+      const otp = generateOTP();
+      const [otpHash, passwordHash] = await Promise.all([bcrypt.hash(otp, 8), bcrypt.hash(password, 8)]);
+      await db.collection('pending_registrations').updateOne(
+        { _id: normalizedEmail },
+        { $set: {
+            name, passwordHash, otpHash,
+            otpExpiresAt: new Date(Date.now() + OTP_TTL_MS),
+            attempts: 0, lastSentAt: new Date(), createdAt: new Date(),
+          } },
+        { upsert: true }
+      );
+      try {
+        await sendOtpEmail(normalizedEmail, name, otp);
+      } catch (e) {
+        return err('Could not send the verification email. Please try again in a moment.', 502);
+      }
+      return json({ pending: true, email: normalizedEmail });
+    }
+
+    if (path === '/auth/verify-otp' && method === 'POST') {
+      const { email, otp } = await req.json();
+      if (!email || !otp) return err('Missing fields');
+      const normalizedEmail = email.toLowerCase().trim();
+      const pending = await db.collection('pending_registrations').findOne({ _id: normalizedEmail });
+      if (!pending) return err('No pending signup found for this email — please sign up again.', 404);
+      if (new Date(pending.otpExpiresAt) < new Date()) {
+        await db.collection('pending_registrations').deleteOne({ _id: normalizedEmail });
+        return err('That code expired. Please sign up again to get a new one.', 410);
+      }
+      if (pending.attempts >= OTP_MAX_ATTEMPTS) {
+        await db.collection('pending_registrations').deleteOne({ _id: normalizedEmail });
+        return err('Too many incorrect attempts. Please sign up again.', 429);
+      }
+      const ok = await bcrypt.compare(String(otp).trim(), pending.otpHash);
+      if (!ok) {
+        await db.collection('pending_registrations').updateOne({ _id: normalizedEmail }, { $inc: { attempts: 1 } });
+        return err('Incorrect code', 400);
+      }
+      const exists = await db.collection('users').findOne({ email: normalizedEmail });
+      if (exists) {
+        await db.collection('pending_registrations').deleteOne({ _id: normalizedEmail });
+        return err('Email already registered', 409);
+      }
       const id = uuidv4();
       await db.collection('users').insertOne({
-        _id: id, email: email.toLowerCase(),
-        password: await bcrypt.hash(password, 8),
-        name, profileComplete: false, createdAt: new Date(),
+        _id: id, email: normalizedEmail, password: pending.passwordHash,
+        name: pending.name, profileComplete: false, createdAt: new Date(),
       });
-      const token = jwt.sign({ id, email: email.toLowerCase(), name }, JWT_SECRET, { expiresIn: '1d' });
-      return json({ token, user: { id, email, name, profileComplete: false } });
+      await db.collection('pending_registrations').deleteOne({ _id: normalizedEmail });
+      const token = jwt.sign({ id, email: normalizedEmail, name: pending.name }, JWT_SECRET, { expiresIn: '1d' });
+      return json({ token, user: { id, email: normalizedEmail, name: pending.name, profileComplete: false } });
+    }
+
+    if (path === '/auth/resend-otp' && method === 'POST') {
+      const { email } = await req.json();
+      if (!email) return err('Missing email');
+      const normalizedEmail = email.toLowerCase().trim();
+      const pending = await db.collection('pending_registrations').findOne({ _id: normalizedEmail });
+      if (!pending) return err('No pending signup found for this email — please sign up again.', 404);
+      const secondsSinceLastSend = (Date.now() - new Date(pending.lastSentAt).getTime()) / 1000;
+      if (secondsSinceLastSend < OTP_RESEND_COOLDOWN_S) {
+        return err(`Please wait ${Math.ceil(OTP_RESEND_COOLDOWN_S - secondsSinceLastSend)}s before requesting another code`, 429);
+      }
+      const otp = generateOTP();
+      const otpHash = await bcrypt.hash(otp, 8);
+      await db.collection('pending_registrations').updateOne(
+        { _id: normalizedEmail },
+        { $set: { otpHash, otpExpiresAt: new Date(Date.now() + OTP_TTL_MS), attempts: 0, lastSentAt: new Date() } }
+      );
+      try {
+        await sendOtpEmail(normalizedEmail, pending.name, otp);
+      } catch (e) {
+        return err('Could not send the verification email. Please try again in a moment.', 502);
+      }
+      return json({ ok: true });
     }
 
     if (path === '/auth/login' && method === 'POST') {
