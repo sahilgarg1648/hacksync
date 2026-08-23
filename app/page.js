@@ -128,6 +128,7 @@ export default function App() {
   const [submitHackathonOpen, setSubmitHackathonOpen] = useState(false);
   const [selectedDMUser, setSelectedDMUser] = useState(null);
   const [initialMatchHackathonId, setInitialMatchHackathonId] = useState(null);
+  const [authChecking, setAuthChecking] = useState(true);
 
   const openConversationWith = (dev) => {
     if (!user) { setSelectedDev(null); setAuthTab('login'); setAuthOpen(true); return; }
@@ -167,14 +168,15 @@ export default function App() {
 
   useEffect(() => {
     const t = localStorage.getItem('token');
-    if (!t) return;
+    if (!t) { setAuthChecking(false); return; }
     api('/auth/me')
       .then((d) => {
         setUser(d.user);
         if (!d.user.profileComplete) setOnboardingOpen(true);
         else setView('dashboard');
       })
-      .catch(() => localStorage.removeItem('token'));
+      .catch(() => localStorage.removeItem('token'))
+      .finally(() => setAuthChecking(false));
   }, []);
 
   // land directly on a team after creating one from the hackathon detail page (?team=<id>)
@@ -230,6 +232,14 @@ export default function App() {
   };
 
   const refreshTeams = () => api('/teams?mine=true').then((d) => setTeams(d.teams)).catch(() => {});
+
+  if (authChecking) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-neutral-400" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen relative">
