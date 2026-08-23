@@ -98,10 +98,14 @@ function hackathonMatch(h, userSkills) {
   };
 }
 
+let seedEnsured = false;
 async function ensureSeed(db) {
   // Demo/seed data has been removed. This only guarantees the unique index exists —
-  // it no longer inserts fake developers.
+  // it no longer inserts fake developers. Only needs to run once per warm instance,
+  // not on every request.
+  if (seedEnsured) return;
   await db.collection('users').createIndex({ email: 1 }, { unique: true });
+  seedEnsured = true;
 }
 
 async function getHackathonsFromDb(db) {
@@ -502,9 +506,11 @@ async function handle(req, { params }) {
       return json({ cms: { ...DEFAULT_CMS, ...cfg } });
     }
     if (path === '/stats' && method === 'GET') {
-      const devCount = await db.collection('users').countDocuments({ profileComplete: true });
-      const hackathonCount = await db.collection('hackathons').countDocuments({ verified: { $ne: false } });
-      const teamCount = await db.collection('teams').countDocuments({});
+      const [devCount, hackathonCount, teamCount] = await Promise.all([
+        db.collection('users').countDocuments({ profileComplete: true }),
+        db.collection('hackathons').countDocuments({ verified: { $ne: false } }),
+        db.collection('teams').countDocuments({}),
+      ]);
       return json({ developers: devCount, hackathons: hackathonCount, teams: teamCount });
     }
 
@@ -881,41 +887,49 @@ async function handle(req, { params }) {
       const dayAgo = new Date(now - 86400000);
       const weekAgo = new Date(now - 7 * 86400000);
       const monthAgo = new Date(now - 30 * 86400000);
-      const totalUsers = await db.collection('users').countDocuments({});
-      const activeToday = await db.collection('users').countDocuments({ updatedAt: { $gte: dayAgo } });
-      const usersThisMonth = await db.collection('users').countDocuments({ createdAt: { $gte: monthAgo } });
-      const usersPrevMonth = await db.collection('users').countDocuments({ createdAt: { $gte: new Date(now - 60 * 86400000), $lt: monthAgo } });
-      const teamsCount = await db.collection('teams').countDocuments({});
-      const messagesCount = await db.collection('messages').countDocuments({});
-      const verifiedCount = await db.collection('users').countDocuments({ verified: true });
-      const hackathonsCount = await db.collection('hackathons').countDocuments({ verified: { $ne: false } });
-      const pendingReportsCount = await db.collection('reports').countDocuments({ status: 'pending' });
-      const pendingVerificationsCount = await db.collection('users').countDocuments({ verified: { $ne: true }, profileComplete: true });
-      const teamsWithRequests = await db.collection('teams').find({}, { projection: { joinRequests: 1 } }).toArray();
+      const fourteenDaysAgo = new Date(now - 14 * 86400000);
+      const [
+        totalUsers, activeToday, usersThisMonth, usersPrevMonth, teamsCount, messagesCount,
+        hackathonsCount, pendingReportsCount, pendingVerificationsCount, teamsWithRequests,
+        allUsers, growthAgg, recentUsers, recentMessages, recentTeams,
+      ] = await Promise.all([
+        db.collection('users').countDocuments({}),
+        db.collection('users').countDocuments({ updatedAt: { $gte: dayAgo } }),
+        db.collection('users').countDocuments({ createdAt: { $gte: monthAgo } }),
+        db.collection('users').countDocuments({ createdAt: { $gte: new Date(now - 60 * 86400000), $lt: monthAgo } }),
+        db.collection('teams').countDocuments({}),
+        db.collection('messages').countDocuments({}),
+        db.collection('hackathons').countDocuments({ verified: { $ne: false } }),
+        db.collection('reports').countDocuments({ status: 'pending' }),
+        db.collection('users').countDocuments({ verified: { $ne: true }, profileComplete: true }),
+        db.collection('teams').find({}, { projection: { joinRequests: 1 } }).toArray(),
+        db.collection('users').find({ profileComplete: true }, { projection: { skills: 1, college: 1, createdAt: 1 } }).toArray(),
+        db.collection('users').aggregate([
+          { $match: { createdAt: { $gte: fourteenDaysAgo } } },
+          { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, count: { $sum: 1 } } },
+        ]).toArray(),
+        db.collection('users').find({}).sort({ createdAt: -1 }).limit(8).toArray(),
+        db.collection('messages').find({ system: { $ne: true } }).sort({ createdAt: -1 }).limit(5).toArray(),
+        db.collection('teams').find({}).sort({ createdAt: -1 }).limit(3).toArray(),
+      ]);
       const applicationsCount = teamsWithRequests.reduce((s, t) => s + (t.joinRequests || []).length, 0);
       // skill popularity
-      const allUsers = await db.collection('users').find({ profileComplete: true }, { projection: { skills: 1, college: 1, createdAt: 1 } }).toArray();
       const skillCounts = {}; const collegeCounts = {};
       for (const u of allUsers) {
         for (const s of u.skills || []) skillCounts[s] = (skillCounts[s] || 0) + 1;
         if (u.college) collegeCounts[u.college] = (collegeCounts[u.college] || 0) + 1;
       }
       // last 14d growth
+      const growthMap = Object.fromEntries(growthAgg.map((g) => [g._id, g.count]));
       const growth = [];
       for (let i = 13; i >= 0; i--) {
-        const d0 = new Date(now - (i + 1) * 86400000);
         const d1 = new Date(now - i * 86400000);
-        const cnt = await db.collection('users').countDocuments({ createdAt: { $gte: d0, $lt: d1 } });
-        growth.push({ day: d1.toISOString().slice(5, 10), users: cnt });
+        growth.push({ day: d1.toISOString().slice(5, 10), users: growthMap[d1.toISOString().slice(0, 10)] || 0 });
       }
-      // recent registrations
-      const recentUsers = await db.collection('users').find({}).sort({ createdAt: -1 }).limit(8).toArray();
       const recent = recentUsers.map((u) => ({ id: u._id, name: u.name, email: u.email, avatar: u.avatar, college: u.college, createdAt: u.createdAt }));
       // recent activity (synthetic from messages + teams + users)
       const activity = [];
-      const recentMessages = await db.collection('messages').find({ system: { $ne: true } }).sort({ createdAt: -1 }).limit(5).toArray();
       for (const m of recentMessages) activity.push({ type: 'message', text: `${m.userName} sent a message`, at: m.createdAt });
-      const recentTeams = await db.collection('teams').find({}).sort({ createdAt: -1 }).limit(3).toArray();
       for (const t of recentTeams) activity.push({ type: 'team', text: `Team "${t.name}" was created`, at: t.createdAt });
       activity.sort((a, b) => new Date(b.at) - new Date(a.at));
 
@@ -1092,19 +1106,35 @@ async function handle(req, { params }) {
 
     if (path === '/admin/analytics' && method === 'GET') {
       const r = await requireAdmin(req, db); if (r.err) return r.err;
-      const totalUsers = await db.collection('users').countDocuments({});
-      // 14-day DAU (real counts — active = profile updated that day, messages = real message count)
-      const dau = [];
       const now = Date.now();
+      const fourteenDaysAgo = new Date(now - 14 * 86400000);
+      const [
+        totalUsers, dauAgg, msgAgg, allUsers, completed, teams, totalMessages,
+      ] = await Promise.all([
+        db.collection('users').countDocuments({}),
+        db.collection('users').aggregate([
+          { $match: { updatedAt: { $gte: fourteenDaysAgo } } },
+          { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$updatedAt' } }, count: { $sum: 1 } } },
+        ]).toArray(),
+        db.collection('messages').aggregate([
+          { $match: { createdAt: { $gte: fourteenDaysAgo } } },
+          { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, count: { $sum: 1 } } },
+        ]).toArray(),
+        db.collection('users').find({ profileComplete: true }, { projection: { skills: 1, college: 1 } }).toArray(),
+        db.collection('users').countDocuments({ profileComplete: true }),
+        db.collection('teams').find({}, { projection: { members: 1 } }).toArray(),
+        db.collection('messages').countDocuments({}),
+      ]);
+      // 14-day DAU (real counts — active = profile updated that day, messages = real message count)
+      const dauMap = Object.fromEntries(dauAgg.map((g) => [g._id, g.count]));
+      const msgMap = Object.fromEntries(msgAgg.map((g) => [g._id, g.count]));
+      const dau = [];
       for (let i = 13; i >= 0; i--) {
-        const d0 = new Date(now - (i + 1) * 86400000);
         const d1 = new Date(now - i * 86400000);
-        const u = await db.collection('users').countDocuments({ updatedAt: { $gte: d0, $lt: d1 } });
-        const m = await db.collection('messages').countDocuments({ createdAt: { $gte: d0, $lt: d1 } });
-        dau.push({ day: d1.toISOString().slice(5, 10), dau: u, messages: m });
+        const key = d1.toISOString().slice(0, 10);
+        dau.push({ day: d1.toISOString().slice(5, 10), dau: dauMap[key] || 0, messages: msgMap[key] || 0 });
       }
       // technologies
-      const allUsers = await db.collection('users').find({ profileComplete: true }).toArray();
       const techCounts = {};
       for (const u of allUsers) for (const s of u.skills || []) techCounts[s] = (techCounts[s] || 0) + 1;
       const technologies = Object.entries(techCounts).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 10);
@@ -1113,8 +1143,6 @@ async function handle(req, { params }) {
       const colleges = Object.entries(collegeCounts).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 8);
       // funnel — only stages we actually track. No pageview/analytics tracking exists, so
       // "visited" and no project-submission feature exists, so that stage isn't included either.
-      const completed = await db.collection('users').countDocuments({ profileComplete: true });
-      const teams = await db.collection('teams').find({}, { projection: { members: 1 } }).toArray();
       const inTeamIds = new Set();
       for (const t of teams) for (const m of t.members || []) inTeamIds.add(m.userId);
       const funnel = [
@@ -1122,7 +1150,6 @@ async function handle(req, { params }) {
         { stage: 'Profile complete', count: completed },
         { stage: 'In a team', count: inTeamIds.size },
       ];
-      const totalMessages = await db.collection('messages').countDocuments({});
       return json({
         dau, technologies, colleges, funnel,
         totalMessages,

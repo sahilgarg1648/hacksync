@@ -52,7 +52,7 @@ const HackathonCard = ({ h, delay = 0 }) => (
     whileHover={{ y: -4 }} className="glass rounded-2xl overflow-hidden group block cursor-pointer">
     <div className="relative h-44 overflow-hidden">
       {h.banner ? (
-        <img src={h.banner} alt={h.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+        <img src={h.banner} alt={h.name} loading="lazy" decoding="async" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
       ) : (
         <div className="w-full h-full bg-neutral-50 flex flex-col items-center justify-center gap-2">
           <div className="w-10 h-10 rounded-xl bg-white border border-neutral-200 flex items-center justify-center"><Sparkles className="w-5 h-5 text-neutral-400" /></div>
@@ -60,7 +60,7 @@ const HackathonCard = ({ h, delay = 0 }) => (
         </div>
       )}
       {h.organizerLogo && (
-        <img src={h.organizerLogo} alt="" className="absolute bottom-2 left-2 w-8 h-8 rounded-full ring-2 ring-white object-contain bg-white" />
+        <img src={h.organizerLogo} alt="" loading="lazy" decoding="async" className="absolute bottom-2 left-2 w-8 h-8 rounded-full ring-2 ring-white object-contain bg-white" />
       )}
       <Badge className="absolute top-3 right-3 bg-neutral-900/80 text-white border-0">{h.tag}</Badge>
       {h.matchScore != null && (

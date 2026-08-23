@@ -574,7 +574,7 @@ const HackathonsPanel = () => {
         {filtered.map((h, i) => (
           <motion.div key={h.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }} className="glass rounded-2xl overflow-hidden">
             <div className="relative h-32">
-              {h.banner ? <img src={h.banner} alt={h.name} className="w-full h-full object-cover" /> : (
+              {h.banner ? <img src={h.banner} alt={h.name} loading="lazy" decoding="async" className="w-full h-full object-cover" /> : (
                 <div className="w-full h-full bg-neutral-50 flex flex-col items-center justify-center gap-1.5">
                   <div className="w-7 h-7 rounded-lg bg-white border border-neutral-200 flex items-center justify-center"><Sparkles className="w-3.5 h-3.5 text-neutral-400" /></div>
                   <div className="text-[10px] text-neutral-400 font-medium">{h.domain || 'Hackathon'}</div>
