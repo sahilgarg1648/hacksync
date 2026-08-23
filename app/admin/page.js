@@ -59,11 +59,7 @@ const NAV = [
   { k: 'settings', l: 'Settings', i: Settings },
 ];
 
-const Orbs = () => (
-  <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-    <div className="absolute inset-0 grid-pattern" />
-  </div>
-);
+const Orbs = () => null;
 
 export default function AdminPage() {
   const router = useRouter();
@@ -280,6 +276,7 @@ const Overview = () => {
     { label: 'Ongoing Hackathons', value: data.hackathons, icon: Trophy, color: 'from-neutral-100 to-neutral-100' },
     { label: 'Pending Reports', value: data.pendingReports, icon: Flag, color: 'from-neutral-100 to-neutral-100' },
     { label: 'Pending Verifications', value: data.pendingVerifications, icon: ShieldCheck, color: 'from-neutral-100 to-neutral-100' },
+    { label: 'Applications', value: data.applications, icon: UserCheck, color: 'from-neutral-100 to-neutral-100' },
     { label: 'Platform Growth', value: `${data.growthPct}%`, icon: TrendingUp, color: 'from-neutral-100 to-neutral-100', change: data.growthPct },
   ];
   return (
@@ -577,11 +574,21 @@ const HackathonsPanel = () => {
         {filtered.map((h, i) => (
           <motion.div key={h.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }} className="glass rounded-2xl overflow-hidden">
             <div className="relative h-32">
-              {h.banner ? <img src={h.banner} alt={h.name} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-neutral-200 flex items-center justify-center"><Trophy className="w-8 h-8 text-neutral-400" /></div>}
+              {h.banner ? <img src={h.banner} alt={h.name} className="w-full h-full object-cover" /> : (
+                <div className="w-full h-full bg-neutral-50 flex flex-col items-center justify-center gap-1.5">
+                  <div className="w-7 h-7 rounded-lg bg-white border border-neutral-200 flex items-center justify-center"><Sparkles className="w-3.5 h-3.5 text-neutral-400" /></div>
+                  <div className="text-[10px] text-neutral-400 font-medium">{h.domain || 'Hackathon'}</div>
+                </div>
+              )}
               <Badge className="absolute top-2 right-2 bg-neutral-900/80 text-white border-0">{h.tag}</Badge>
             </div>
             <div className="p-4">
               <div className="flex items-start justify-between mb-2"><div><h3 className="font-bold">{h.name}</h3><p className="text-xs text-neutral-500">{h.domain} · {h.deadline}</p></div><div className="font-bold gradient-text">{h.prize}</div></div>
+              {(h.mode || h.location || h.difficulty) && (
+                <p className="text-xs text-neutral-500 mb-2">
+                  {[h.mode && h.mode[0].toUpperCase() + h.mode.slice(1), h.location, h.difficulty && h.difficulty.replace('-', ' ')].filter(Boolean).join(' · ')}
+                </p>
+              )}
               <div className="flex items-center gap-2 flex-wrap text-xs text-neutral-500 mb-3">
                 <span><Users className="w-3 h-3 inline mr-1" />{h.participants}</span>
                 <Badge className="bg-green-500/20 text-green-600 border-0 text-[9px] capitalize">{h.status || 'active'}</Badge>
@@ -614,20 +621,78 @@ const HackathonsPanel = () => {
   );
 };
 
+const SKILLS = ['React', 'Node.js', 'MongoDB', 'Python', 'AI/ML', 'UI/UX', 'Blockchain', 'DevOps', 'App Development', 'TypeScript', 'Go', 'Rust', 'Solidity', 'Figma', 'PostgreSQL', 'GraphQL', 'AWS', 'Docker'];
+const VALID_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
 const HackathonForm = ({ initial, onSave, isNew }) => {
-  const [d, setD] = useState({ name: '', banner: '', domain: '', prize: '', deadline: '', participants: '0', tag: 'New', status: 'active', college: '', description: '', ...initial });
+  const [d, setD] = useState({
+    name: '', banner: '', domain: '', prize: '', deadline: '', participants: '0', tag: 'New', status: 'active', college: '', description: '',
+    location: '', mode: 'online', teamSize: '1-2', difficulty: 'all-levels', skillsRequired: [], organizerLogo: '',
+    ...initial,
+  });
+  const [customSkill, setCustomSkill] = useState('');
+  const toggleSkill = (s) => setD((cur) => ({ ...cur, skillsRequired: cur.skillsRequired.includes(s) ? cur.skillsRequired.filter((x) => x !== s) : [...cur.skillsRequired, s] }));
+  const addCustomSkill = () => {
+    const v = customSkill.trim().slice(0, 30);
+    if (!v) return;
+    setD((cur) => {
+      if (cur.skillsRequired.some((x) => x.toLowerCase() === v.toLowerCase())) return cur;
+      return { ...cur, skillsRequired: [...cur.skillsRequired, v] };
+    });
+    setCustomSkill('');
+  };
+  const deadlineIsDate = VALID_DATE.test(d.deadline || '');
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 max-h-[75vh] overflow-y-auto pr-1">
       <h2 className="text-xl font-bold">{isNew ? 'New hackathon' : 'Edit hackathon'}</h2>
       <Input placeholder="Name" value={d.name} onChange={(e) => setD({ ...d, name: e.target.value })} className="bg-neutral-100 border-neutral-200" />
       <Textarea placeholder="Description (shown on the hackathon's detail page)" rows={2} value={d.description} onChange={(e) => setD({ ...d, description: e.target.value })} className="bg-neutral-100 border-neutral-200" />
       <Input placeholder="Banner image URL" value={d.banner} onChange={(e) => setD({ ...d, banner: e.target.value })} className="bg-neutral-100 border-neutral-200" />
+      <Input placeholder="Organizer logo URL (optional)" value={d.organizerLogo} onChange={(e) => setD({ ...d, organizerLogo: e.target.value })} className="bg-neutral-100 border-neutral-200" />
       <Input placeholder="College (optional — leave blank if not campus-specific)" value={d.college} onChange={(e) => setD({ ...d, college: e.target.value })} className="bg-neutral-100 border-neutral-200" />
       <div className="grid grid-cols-2 gap-2">
         <Input placeholder="Domain (AI, Web3...)" value={d.domain} onChange={(e) => setD({ ...d, domain: e.target.value })} className="bg-neutral-100 border-neutral-200" />
         <Input placeholder="Prize ($50,000)" value={d.prize} onChange={(e) => setD({ ...d, prize: e.target.value })} className="bg-neutral-100 border-neutral-200" />
-        <Input placeholder="Deadline (2026-09-01)" value={d.deadline} onChange={(e) => setD({ ...d, deadline: e.target.value })} className="bg-neutral-100 border-neutral-200" />
+        {deadlineIsDate || isNew ? (
+          <Input type="date" value={d.deadline} onChange={(e) => setD({ ...d, deadline: e.target.value })} className="bg-neutral-100 border-neutral-200" />
+        ) : (
+          <Input placeholder="Deadline (2026-09-01)" value={d.deadline} onChange={(e) => setD({ ...d, deadline: e.target.value })} className="bg-neutral-100 border-neutral-200" />
+        )}
         <Input placeholder="Participants (2.4k)" value={d.participants} onChange={(e) => setD({ ...d, participants: e.target.value })} className="bg-neutral-100 border-neutral-200" />
+        <Input placeholder="Location (Bengaluru / Remote)" value={d.location} onChange={(e) => setD({ ...d, location: e.target.value })} className="bg-neutral-100 border-neutral-200" />
+        <select value={d.mode} onChange={(e) => setD({ ...d, mode: e.target.value })} className="bg-neutral-100 border border-neutral-200 rounded-lg px-3 py-2 text-sm">
+          <option value="online">Online</option><option value="offline">Offline</option><option value="hybrid">Hybrid</option>
+        </select>
+        <select value={d.teamSize} onChange={(e) => setD({ ...d, teamSize: e.target.value })} className="bg-neutral-100 border border-neutral-200 rounded-lg px-3 py-2 text-sm">
+          <option value="1-2">1-2 members</option><option value="3-4">3-4 members</option><option value="5-6">5-6 members</option><option value="7+">7+ members</option>
+        </select>
+        <select value={d.difficulty} onChange={(e) => setD({ ...d, difficulty: e.target.value })} className="bg-neutral-100 border border-neutral-200 rounded-lg px-3 py-2 text-sm">
+          <option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option><option value="all-levels">All levels</option>
+        </select>
+      </div>
+      <div>
+        <label className="text-xs text-neutral-500 mb-2 block">Skills required</label>
+        <div className="flex flex-wrap gap-2">
+          {SKILLS.map((s) => (
+            <button key={s} type="button" onClick={() => toggleSkill(s)}
+              className={`px-3 py-1.5 rounded-full border text-xs transition ${d.skillsRequired.includes(s) ? 'bg-indigo-600 border-transparent text-white' : 'bg-neutral-100 border-neutral-200 text-neutral-600 hover:bg-neutral-100'}`}>
+              {s} {d.skillsRequired.includes(s) && <Check className="w-3 h-3 inline ml-1" />}
+            </button>
+          ))}
+          {d.skillsRequired.filter((s) => !SKILLS.includes(s)).map((s) => (
+            <button key={s} type="button" onClick={() => toggleSkill(s)} className="px-3 py-1.5 rounded-full border border-transparent text-xs bg-indigo-600 text-white flex items-center gap-1">
+              {s} <X className="w-3 h-3" />
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-2 mt-2">
+          <Input value={customSkill} onChange={(e) => setCustomSkill(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustomSkill(); } }}
+            maxLength={30} placeholder="Not listed? Add a skill..." className="bg-neutral-100 border-neutral-200 flex-1 h-9 text-sm" />
+          <Button type="button" variant="outline" size="sm" onClick={addCustomSkill} className="bg-neutral-100 border-neutral-200 flex-shrink-0 h-9">
+            <Plus className="w-4 h-4" />
+          </Button>
+        </div>
       </div>
       <div className="grid grid-cols-2 gap-2">
         <select value={d.tag} onChange={(e) => setD({ ...d, tag: e.target.value })} className="bg-neutral-100 border border-neutral-200 rounded-lg px-3 py-2 text-sm">

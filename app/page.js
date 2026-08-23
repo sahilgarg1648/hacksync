@@ -20,7 +20,7 @@ import {
   Calendar, Clock, Award,
   Plus, X, Check, Layers, Heart, Send, Smile, MoreVertical,
   Server, Lightbulb, Flame, GitFork, Star, UserPlus, Loader2,
-  GraduationCap, Shield, ShieldCheck,
+  GraduationCap, Shield, ShieldCheck, MapPin, Menu,
 } from 'lucide-react';
 
 // ---------- constants ----------
@@ -58,12 +58,8 @@ const api = async (path, opts = {}) => {
   return data;
 };
 
-// ---------- background texture ----------
-const Orbs = () => (
-  <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-    <div className="absolute inset-0 grid-pattern" />
-  </div>
-);
+// ---------- background ----------
+const Orbs = () => null;
 
 // ---------- circular match ring ----------
 const MatchRing = ({ score, size = 80, stroke = 6 }) => {
@@ -121,6 +117,7 @@ export default function App() {
   const [matches, setMatches] = useState([]);
   const [stats, setStats] = useState({ developers: 0, hackathons: 0, teams: 0 });
   const [hackathons, setHackathons] = useState([]);
+  const [hackathonsError, setHackathonsError] = useState(false);
   const [topDevelopers, setTopDevelopers] = useState([]);
   const [cms, setCms] = useState(null);
   const [selectedDev, setSelectedDev] = useState(null);
@@ -139,10 +136,15 @@ export default function App() {
     setView('dm');
   };
 
+  const loadHackathons = () => {
+    setHackathonsError(false);
+    api('/hackathons').then((d) => setHackathons(d.hackathons)).catch(() => setHackathonsError(true));
+  };
+
   useEffect(() => {
     api('/stats').then(setStats).catch(() => {});
     api('/developers').then((d) => setTopDevelopers(d.developers.slice(0, 6))).catch(() => {});
-    api('/hackathons').then((d) => setHackathons(d.hackathons)).catch(() => {});
+    loadHackathons();
     api('/cms').then((d) => setCms(d.cms)).catch(() => {});
   }, []);
 
@@ -246,6 +248,7 @@ export default function App() {
         <AppShell user={user} view={view} setView={(v) => { setView(v); if (v !== 'team') setSelectedTeamId(null); if (v !== 'dm') setSelectedDMUser(null); }} onLogout={logout}>
           {view === 'dashboard' && (
             <Dashboard user={user} matches={matches} hackathons={hackathons}
+              hackathonsError={hackathonsError} onRetryHackathons={loadHackathons}
               onSubmitHackathon={() => setSubmitHackathonOpen(true)} />
           )}
           {view === 'matches' && (
@@ -492,6 +495,16 @@ const SectionHeader = ({ badge, title, subtitle }) => (
   </div>
 );
 
+function daysLeftLabel(deadline) {
+  if (!deadline) return null;
+  const d = new Date(deadline);
+  if (Number.isNaN(d.getTime())) return deadline;
+  const days = Math.ceil((d.getTime() - Date.now()) / 86400000);
+  if (days < 0) return 'Closed';
+  if (days === 0) return 'Last day';
+  return `${days} day${days === 1 ? '' : 's'} left`;
+}
+
 const HackathonCard = ({ h, delay = 0 }) => (
   <motion.a href={`/hackathons/${h.id}`} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay }}
     whileHover={{ y: -4 }} className="glass rounded-2xl overflow-hidden group block cursor-pointer">
@@ -499,9 +512,18 @@ const HackathonCard = ({ h, delay = 0 }) => (
       {h.banner ? (
         <img src={h.banner} alt={h.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
       ) : (
-        <div className="w-full h-full bg-neutral-200 flex items-center justify-center"><Trophy className="w-10 h-10 text-neutral-400" /></div>
+        <div className="w-full h-full bg-neutral-50 flex flex-col items-center justify-center gap-2">
+          <div className="w-10 h-10 rounded-xl bg-white border border-neutral-200 flex items-center justify-center"><Sparkles className="w-5 h-5 text-neutral-400" /></div>
+          <div className="text-xs text-neutral-400 font-medium">{h.domain || 'Hackathon'}</div>
+        </div>
+      )}
+      {h.organizerLogo && (
+        <img src={h.organizerLogo} alt="" className="absolute bottom-2 left-2 w-8 h-8 rounded-full ring-2 ring-white object-contain bg-white" />
       )}
       <Badge className="absolute top-3 right-3 bg-neutral-900/80 text-white border-0">{h.tag}</Badge>
+      {h.matchScore != null && (
+        <Badge className="absolute top-3 right-3 mt-8 bg-indigo-600 text-white border-0">{h.matchScore}% match</Badge>
+      )}
       {h.college && (
         <Badge className="absolute top-3 left-3 border-0 bg-neutral-900/80 text-white flex items-center gap-1">
           <GraduationCap className="w-3 h-3" /> {h.college}
@@ -509,7 +531,7 @@ const HackathonCard = ({ h, delay = 0 }) => (
       )}
     </div>
     <div className="p-5">
-      <div className="flex items-start justify-between mb-3">
+      <div className="flex items-start justify-between mb-2">
         <div>
           <h3 className="font-bold text-lg">{h.name}</h3>
           <p className="text-xs text-neutral-500 mt-1">{h.domain}</p>
@@ -519,8 +541,24 @@ const HackathonCard = ({ h, delay = 0 }) => (
           <div className="font-bold gradient-text text-lg">{h.prize}</div>
         </div>
       </div>
+      {(h.mode || h.location) && (
+        <div className="flex items-center gap-1 text-xs text-neutral-500 mb-2">
+          <MapPin className="w-3 h-3" />
+          {[h.mode && h.mode[0].toUpperCase() + h.mode.slice(1), h.location].filter(Boolean).join(' · ')}
+        </div>
+      )}
+      {h.skillsRequired?.length > 0 && (
+        <div className="flex flex-wrap gap-1 mb-3">
+          {h.skillsRequired.slice(0, 4).map((s) => (
+            <span key={s} className="px-2 py-0.5 rounded-md bg-neutral-100 text-neutral-600 text-[11px]">{s}</span>
+          ))}
+          {h.skillsRequired.length > 4 && (
+            <span className="px-2 py-0.5 rounded-md bg-neutral-100 text-neutral-500 text-[11px]">+{h.skillsRequired.length - 4}</span>
+          )}
+        </div>
+      )}
       <div className="flex items-center gap-4 text-xs text-neutral-500">
-        <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {h.deadline}</span>
+        <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {daysLeftLabel(h.deadline) || h.deadline}</span>
         <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {h.participants}</span>
       </div>
     </div>
@@ -863,58 +901,109 @@ const MessagesNavButton = ({ active, onClick }) => {
   );
 };
 
-const AppShell = ({ user, view, setView, onLogout, children }) => (
-  <>
-    <nav className="fixed top-0 left-0 right-0 z-30 px-4 py-3">
-      <div className="max-w-7xl mx-auto flex items-center justify-between glass rounded-2xl px-5 py-2.5">
-        <div className="flex items-center gap-6">
-          <button onClick={() => setView('dashboard')} className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-neutral-100 flex items-center justify-center"><Sparkles className="w-4 h-4" /></div>
-            <span className="font-bold tracking-tight">HackSync</span>
-          </button>
-          <div className="hidden md:flex items-center gap-1">
-            <button onClick={() => setView('dashboard')}
-              className={`px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 transition ${view === 'dashboard' ? 'bg-neutral-100 text-neutral-900' : 'text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100'}`}>
-              <Layers className="w-3.5 h-3.5" /> Dashboard
-            </button>
-            <a href="/hackathons" className="px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 transition text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100">
-              <Trophy className="w-3.5 h-3.5" /> Hackathons
-            </a>
-            <button onClick={() => setView('teams')}
-              className={`px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 transition ${view === 'teams' || view === 'team' ? 'bg-neutral-100 text-neutral-900' : 'text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100'}`}>
-              <Users className="w-3.5 h-3.5" /> Teams
-            </button>
-            <button onClick={() => setView('matches')}
-              className={`px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 transition ${view === 'matches' ? 'bg-neutral-100 text-neutral-900' : 'text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100'}`}>
-              <Heart className="w-3.5 h-3.5" /> Matches
-            </button>
-            <MessagesNavButton active={view === 'messages' || view === 'dm'} onClick={() => setView('messages')} />
-            <button onClick={() => setView('profile')}
-              className={`px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 transition ${view === 'profile' ? 'bg-neutral-100 text-neutral-900' : 'text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100'}`}>
-              <Award className="w-3.5 h-3.5" /> Profile
-            </button>
+const AppShell = ({ user, view, setView, onLogout, children }) => {
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const go = (v) => { setView(v); setMobileOpen(false); };
+  return (
+    <>
+      <nav className="fixed top-0 left-0 right-0 z-30 px-4 py-3">
+        <div className="max-w-7xl mx-auto glass rounded-2xl overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-2.5">
+            <div className="flex items-center gap-6">
+              <button onClick={() => setView('dashboard')} className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-neutral-100 flex items-center justify-center"><Sparkles className="w-4 h-4" /></div>
+                <span className="font-bold tracking-tight">HackSync</span>
+              </button>
+              <div className="hidden md:flex items-center gap-1">
+                <button onClick={() => setView('dashboard')}
+                  className={`px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 transition ${view === 'dashboard' ? 'bg-neutral-100 text-neutral-900' : 'text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100'}`}>
+                  <Layers className="w-3.5 h-3.5" /> Dashboard
+                </button>
+                <a href="/hackathons" className="px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 transition text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100">
+                  <Trophy className="w-3.5 h-3.5" /> Hackathons
+                </a>
+                <button onClick={() => setView('teams')}
+                  className={`px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 transition ${view === 'teams' || view === 'team' ? 'bg-neutral-100 text-neutral-900' : 'text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100'}`}>
+                  <Users className="w-3.5 h-3.5" /> Teams
+                </button>
+                <button onClick={() => setView('matches')}
+                  className={`px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 transition ${view === 'matches' ? 'bg-neutral-100 text-neutral-900' : 'text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100'}`}>
+                  <Heart className="w-3.5 h-3.5" /> Matches
+                </button>
+                <MessagesNavButton active={view === 'messages' || view === 'dm'} onClick={() => setView('messages')} />
+                <button onClick={() => setView('profile')}
+                  className={`px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 transition ${view === 'profile' ? 'bg-neutral-100 text-neutral-900' : 'text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100'}`}>
+                  <Award className="w-3.5 h-3.5" /> Profile
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {user.isAdmin && (
+                <a href="/admin" className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-amber-700 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 transition">
+                  <Shield className="w-3.5 h-3.5" /> Admin
+                </a>
+              )}
+              <NotificationInbox />
+              <Avatar className="w-8 h-8 ring-1 ring-indigo-500/40"><AvatarImage src={user.avatar} /><AvatarFallback>{user.name?.[0]}</AvatarFallback></Avatar>
+              <Button size="icon" variant="ghost" onClick={onLogout} className="text-neutral-500 hover:text-neutral-900 hidden md:inline-flex"><LogOut className="w-4 h-4" /></Button>
+              <Button size="icon" variant="ghost" onClick={() => setMobileOpen((o) => !o)} className="text-neutral-500 hover:text-neutral-900 md:hidden">
+                <Menu className="w-5 h-5" />
+              </Button>
+            </div>
           </div>
+          <AnimatePresence>
+            {mobileOpen && (
+              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="md:hidden border-t border-neutral-200">
+                <div className="flex flex-col p-2">
+                  <button onClick={() => go('dashboard')} className={`px-3 py-2.5 rounded-lg text-sm flex items-center gap-2 text-left transition ${view === 'dashboard' ? 'bg-neutral-100 text-neutral-900' : 'text-neutral-600 hover:bg-neutral-100'}`}><Layers className="w-4 h-4" /> Dashboard</button>
+                  <a href="/hackathons" className="px-3 py-2.5 rounded-lg text-sm flex items-center gap-2 text-neutral-600 hover:bg-neutral-100"><Trophy className="w-4 h-4" /> Hackathons</a>
+                  <button onClick={() => go('teams')} className={`px-3 py-2.5 rounded-lg text-sm flex items-center gap-2 text-left transition ${view === 'teams' || view === 'team' ? 'bg-neutral-100 text-neutral-900' : 'text-neutral-600 hover:bg-neutral-100'}`}><Users className="w-4 h-4" /> Teams</button>
+                  <button onClick={() => go('matches')} className={`px-3 py-2.5 rounded-lg text-sm flex items-center gap-2 text-left transition ${view === 'matches' ? 'bg-neutral-100 text-neutral-900' : 'text-neutral-600 hover:bg-neutral-100'}`}><Heart className="w-4 h-4" /> Matches</button>
+                  <button onClick={() => go('messages')} className={`px-3 py-2.5 rounded-lg text-sm flex items-center gap-2 text-left transition ${view === 'messages' || view === 'dm' ? 'bg-neutral-100 text-neutral-900' : 'text-neutral-600 hover:bg-neutral-100'}`}><MessageSquare className="w-4 h-4" /> Messages</button>
+                  <button onClick={() => go('profile')} className={`px-3 py-2.5 rounded-lg text-sm flex items-center gap-2 text-left transition ${view === 'profile' ? 'bg-neutral-100 text-neutral-900' : 'text-neutral-600 hover:bg-neutral-100'}`}><Award className="w-4 h-4" /> Profile</button>
+                  {user.isAdmin && <a href="/admin" className="px-3 py-2.5 rounded-lg text-sm flex items-center gap-2 text-amber-700 hover:bg-amber-500/10"><Shield className="w-4 h-4" /> Admin</a>}
+                  <button onClick={onLogout} className="px-3 py-2.5 rounded-lg text-sm flex items-center gap-2 text-left text-neutral-600 hover:bg-neutral-100"><LogOut className="w-4 h-4" /> Log out</button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
-        <div className="flex items-center gap-2">
-          {user.isAdmin && (
-            <a href="/admin" className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-amber-700 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 transition">
-              <Shield className="w-3.5 h-3.5" /> Admin
-            </a>
-          )}
-          <NotificationInbox />
-          <Avatar className="w-8 h-8 ring-1 ring-indigo-500/40"><AvatarImage src={user.avatar} /><AvatarFallback>{user.name?.[0]}</AvatarFallback></Avatar>
-          <Button size="icon" variant="ghost" onClick={onLogout} className="text-neutral-500 hover:text-neutral-900"><LogOut className="w-4 h-4" /></Button>
-        </div>
-      </div>
-    </nav>
-    <main className="pt-24 pb-20 px-4 max-w-7xl mx-auto">{children}</main>
-  </>
-);
+      </nav>
+      <main className="pt-24 pb-20 px-4 max-w-7xl mx-auto">{children}</main>
+    </>
+  );
+};
 
 // ====================================================================
 // DASHBOARD
 // ====================================================================
-const Dashboard = ({ user, matches, hackathons, onSubmitHackathon }) => {
+const RecentUpdates = () => {
+  const [updates, setUpdates] = useState(null);
+  useEffect(() => { api('/notifications').then((d) => setUpdates(d.notifications.slice(0, 5))).catch(() => setUpdates([])); }, []);
+  if (updates === null) return <div className="grid gap-2">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="glass rounded-2xl h-16 animate-pulse" />)}</div>;
+  return (
+    <div>
+      <h2 className="text-xl font-bold flex items-center gap-2 mb-5"><Bell className="w-5 h-5 text-neutral-500" /> Recent updates</h2>
+      {updates.length === 0 ? (
+        <div className="glass rounded-2xl p-8 text-center text-neutral-500">No updates yet.</div>
+      ) : (
+        <div className="space-y-2">
+          {updates.map((n) => (
+            <div key={n.id} className="glass rounded-2xl p-4">
+              <div className="font-semibold text-sm">{n.title}</div>
+              {n.body && <div className="text-sm text-neutral-500 mt-0.5">{n.body}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const Dashboard = ({ user, matches, hackathons, hackathonsError, onRetryHackathons, onSubmitHackathon }) => {
+  const recommended = user.skills?.length
+    ? [...hackathons].filter((h) => h.matchScore != null).sort((a, b) => b.matchScore - a.matchScore).slice(0, 6)
+    : [];
   return (
     <div className="space-y-8">
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
@@ -936,6 +1025,19 @@ const Dashboard = ({ user, matches, hackathons, onSubmitHackathon }) => {
           </motion.div>
         ))}
       </div>
+      {recommended.length > 0 && (
+        <div>
+          <div className="flex items-end justify-between mb-5 flex-wrap gap-3">
+            <div>
+              <h2 className="text-xl font-bold flex items-center gap-2"><Sparkles className="w-5 h-5 text-indigo-600" /> Recommended for you</h2>
+              <p className="text-sm text-neutral-500 mt-1">Best skill match for your profile.</p>
+            </div>
+          </div>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {recommended.map((h, i) => <HackathonCard key={h.id} h={h} delay={i * 0.05} />)}
+          </div>
+        </div>
+      )}
       <div>
         <div className="flex items-end justify-between mb-5 flex-wrap gap-3">
           <div>
@@ -947,7 +1049,11 @@ const Dashboard = ({ user, matches, hackathons, onSubmitHackathon }) => {
             <a href="/hackathons"><Button variant="outline" className="bg-neutral-100 border-neutral-200 hover:bg-neutral-100">See all <ArrowRight className="w-4 h-4 ml-1" /></Button></a>
           </div>
         </div>
-        {hackathons.length === 0 ? (
+        {hackathonsError ? (
+          <div className="glass rounded-2xl p-12 text-center text-neutral-500">
+            Couldn't load hackathons. <button onClick={onRetryHackathons} className="text-indigo-600 underline">Try again</button>
+          </div>
+        ) : hackathons.length === 0 ? (
           <div className="glass rounded-2xl p-12 text-center text-neutral-500">No hackathons yet — be the first to submit one.</div>
         ) : (
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -955,6 +1061,7 @@ const Dashboard = ({ user, matches, hackathons, onSubmitHackathon }) => {
           </div>
         )}
       </div>
+      <RecentUpdates />
     </div>
   );
 };
@@ -1010,12 +1117,15 @@ const MatchCard = ({ m, onClick, onMessage, delay = 0 }) => {
 // ====================================================================
 const MatchesView = ({ user, onViewDev, onMessage, onOpenTeam, initialHackathonId }) => {
   const [registered, setRegistered] = useState(null);
+  const [registeredError, setRegisteredError] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [data, setData] = useState(null);
+  const [dataError, setDataError] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
   const [filter, setFilter] = useState('all');
 
-  useEffect(() => {
+  const loadRegistered = () => {
+    setRegisteredError(false);
     api('/my/hackathons').then((d) => {
       setRegistered(d.hackathons);
       if (initialHackathonId && d.hackathons.some((h) => h.id === initialHackathonId)) {
@@ -1023,18 +1133,27 @@ const MatchesView = ({ user, onViewDev, onMessage, onOpenTeam, initialHackathonI
       } else if (d.hackathons.length > 0) {
         setSelectedId(d.hackathons[0].id);
       }
-    }).catch(() => setRegistered([]));
-  }, [initialHackathonId]);
+    }).catch(() => { setRegistered([]); setRegisteredError(true); });
+  };
+  useEffect(loadRegistered, [initialHackathonId]);
 
-  useEffect(() => {
+  const loadMatches = () => {
     if (!selectedId) return;
-    setLoadingData(true);
-    setFilter('all');
-    api(`/hackathons/${selectedId}/matches`).then(setData).catch(() => setData({ matches: [], teams: [] })).finally(() => setLoadingData(false));
-  }, [selectedId]);
+    setLoadingData(true); setDataError(false);
+    api(`/hackathons/${selectedId}/matches`).then(setData).catch(() => { setData({ matches: [], teams: [] }); setDataError(true); }).finally(() => setLoadingData(false));
+  };
+  useEffect(loadMatches, [selectedId]);
 
   if (registered === null) {
     return <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="glass rounded-2xl h-64 animate-pulse" />)}</div>;
+  }
+
+  if (registeredError && registered.length === 0) {
+    return (
+      <div className="glass rounded-2xl p-12 text-center text-neutral-500">
+        Couldn't load your hackathons. <button onClick={loadRegistered} className="text-indigo-600 underline">Try again</button>
+      </div>
+    );
   }
 
   if (registered.length === 0) {
@@ -1075,6 +1194,10 @@ const MatchesView = ({ user, onViewDev, onMessage, onOpenTeam, initialHackathonI
 
       {loadingData ? (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="glass rounded-2xl h-64 animate-pulse" />)}</div>
+      ) : dataError ? (
+        <div className="glass rounded-2xl p-8 text-center text-neutral-500">
+          Couldn't load matches for this hackathon. <button onClick={loadMatches} className="text-indigo-600 underline">Try again</button>
+        </div>
       ) : (
         <>
           <div>
@@ -1117,6 +1240,7 @@ const ProfileView = ({ user, onEdit, onOpenTeam }) => {
   const [githubLoading, setGithubLoading] = useState(false);
   const [teams, setTeams] = useState(null);
   const [matchCount, setMatchCount] = useState(null);
+  const [statsError, setStatsError] = useState(false);
 
   useEffect(() => {
     if (user.github) {
@@ -1125,12 +1249,20 @@ const ProfileView = ({ user, onEdit, onOpenTeam }) => {
     }
   }, [user.github]);
 
-  useEffect(() => {
-    api('/teams?mine=true').then((d) => setTeams(d.teams)).catch(() => setTeams([]));
-    api('/matches').then((d) => setMatchCount(d.matches.filter((m) => m.score >= 60).length)).catch(() => setMatchCount(0));
-  }, []);
+  const loadStats = () => {
+    setStatsError(false);
+    api('/teams?mine=true').then((d) => setTeams(d.teams)).catch(() => setStatsError(true));
+    api('/matches').then((d) => setMatchCount(d.matches.filter((m) => m.score >= 60).length)).catch(() => setStatsError(true));
+  };
+  useEffect(loadStats, []);
 
   const memberSince = user.createdAt && new Date(user.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+  const completion = [
+    [!!user.bio, 15], [!!user.college, 10], [!!user.year, 5], [!!user.avatar, 10],
+    [(user.skills?.length || 0) >= 2, 20], [(user.interests?.length || 0) >= 1, 15],
+    [(user.availability?.length || 0) >= 1, 10], [!!user.github, 10], [!!user.linkedin, 5],
+  ].reduce((sum, [met, weight]) => sum + (met ? weight : 0), 0);
 
   const stats = [
     { label: 'Teams', value: teams === null ? '—' : teams.length, icon: Layers, color: 'from-neutral-100 to-neutral-100' },
@@ -1155,6 +1287,17 @@ const ProfileView = ({ user, onEdit, onOpenTeam }) => {
             <p className="text-neutral-500 mt-1">{user.college}{user.college && user.year ? ' · ' : ''}{user.year}</p>
             {memberSince && <p className="text-xs text-neutral-400 mt-1">Member since {memberSince}</p>}
             <p className="text-neutral-600 mt-3 max-w-2xl">{user.bio || <span className="text-neutral-400 italic">No bio yet — add one so teammates know what you build.</span>}</p>
+            {completion < 100 && (
+              <div className="mt-4 max-w-sm">
+                <div className="flex items-center justify-between text-xs text-neutral-500 mb-1">
+                  <span>Profile {completion}% complete</span>
+                  <button onClick={onEdit} className="text-indigo-600 hover:underline">Complete it</button>
+                </div>
+                <div className="h-1.5 rounded-full bg-neutral-100 overflow-hidden">
+                  <div className="h-full rounded-full bg-indigo-600 transition-all" style={{ width: `${completion}%` }} />
+                </div>
+              </div>
+            )}
             <div className="flex gap-2 mt-4 flex-wrap">
               {user.github && <a href={user.github.startsWith('http') ? user.github : `https://github.com/${user.github}`} target="_blank" rel="noreferrer"><Button size="sm" variant="outline" className="bg-neutral-100 border-neutral-200"><Github className="w-3 h-3 mr-1" /> GitHub</Button></a>}
               {user.linkedin && <a href={user.linkedin} target="_blank" rel="noreferrer"><Button size="sm" variant="outline" className="bg-neutral-100 border-neutral-200"><Linkedin className="w-3 h-3 mr-1" /> LinkedIn</Button></a>}
@@ -1174,6 +1317,11 @@ const ProfileView = ({ user, onEdit, onOpenTeam }) => {
           </div>
         ))}
       </div>
+      {statsError && (teams === null || matchCount === null) && (
+        <div className="glass rounded-2xl p-4 text-center text-sm text-neutral-500">
+          Couldn't load some of your stats. <button onClick={loadStats} className="text-indigo-600 underline">Try again</button>
+        </div>
+      )}
 
       {!user.verified && (
         <div className="glass rounded-2xl p-4 flex items-center gap-3 border border-neutral-200">
@@ -1301,8 +1449,7 @@ const GitHubStats = ({ data }) => {
 const DeveloperDetail = ({ dev, onConnect }) => (
   <div className="p-2">
     <div className="relative h-32 -mx-6 -mt-6 mb-4 rounded-t-lg overflow-hidden">
-      <div className="absolute inset-0 bg-neutral-100 opacity-50" />
-      <div className="absolute inset-0 grid-pattern opacity-50" />
+      <div className="absolute inset-0 bg-neutral-100" />
     </div>
     <div className="flex items-start gap-4 -mt-16 relative px-4">
       <Avatar className="w-24 h-24 ring-4 ring-white"><AvatarImage src={dev.avatar} /><AvatarFallback className="text-2xl">{dev.name?.[0]}</AvatarFallback></Avatar>

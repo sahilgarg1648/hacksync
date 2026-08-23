@@ -85,6 +85,19 @@ function calculateMatch(a, b, weights = DEFAULT_MATCH_WEIGHTS) {
   };
 }
 
+function hackathonMatch(h, userSkills) {
+  const required = h.skillsRequired || [];
+  if (!required.length) return null;
+  const userSet = new Set(userSkills || []);
+  const matchedSkills = required.filter((s) => userSet.has(s));
+  const missingSkills = required.filter((s) => !userSet.has(s));
+  return {
+    matchScore: Math.round((matchedSkills.length / required.length) * 100),
+    matchedSkills,
+    missingSkills,
+  };
+}
+
 async function ensureSeed(db) {
   // Demo/seed data has been removed. This only guarantees the unique index exists —
   // it no longer inserts fake developers.
@@ -362,7 +375,15 @@ async function handle(req, { params }) {
     // ============ HACKATHONS + STATS ============
     if (path === '/hackathons' && method === 'GET') {
       const all = await getHackathonsFromDb(db);
-      return json({ hackathons: all.filter((h) => h.verified !== false) });
+      const visible = all.filter((h) => h.verified !== false);
+      const u = getUserFromToken(req);
+      const me = u ? await db.collection('users').findOne({ _id: u.id }) : null;
+      const withExtras = visible.map((h) => ({
+        ...h,
+        registeredCount: (h.registeredUserIds || []).length,
+        ...(me ? (hackathonMatch(h, me.skills) || {}) : {}),
+      }));
+      return json({ hackathons: withExtras });
     }
 
     if (path === '/hackathons' && method === 'POST') {
@@ -372,15 +393,21 @@ async function handle(req, { params }) {
       const REQUIRED_FIELDS = {
         name: 'Hackathon name', description: 'Description', college: 'College', banner: 'Banner image URL',
         domain: 'Domain', prize: 'Prize', deadline: 'Deadline', participants: 'Expected participants',
+        location: 'Location', mode: 'Mode', teamSize: 'Team size', difficulty: 'Difficulty',
       };
       for (const [field, label] of Object.entries(REQUIRED_FIELDS)) {
         if (!String(data[field] || '').trim()) return err(`${label} is required`);
+      }
+      if (!Array.isArray(data.skillsRequired) || data.skillsRequired.length === 0) {
+        return err('At least one required skill is needed');
       }
       const id = uuidv4();
       const h = {
         _id: id, name: data.name.trim(), banner: data.banner.trim(), domain: data.domain.trim(), prize: data.prize.trim(),
         deadline: data.deadline.trim(), participants: data.participants.trim(), tag: 'New', status: 'active',
         college: data.college.trim(), description: data.description.trim(),
+        location: data.location.trim(), mode: data.mode.trim(), teamSize: data.teamSize.trim(), difficulty: data.difficulty.trim(),
+        skillsRequired: data.skillsRequired, organizerLogo: String(data.organizerLogo || '').trim(),
         registeredUserIds: [],
         verified: false, submittedBy: u.id, submitterName: u.name,
         createdAt: new Date(),
@@ -394,10 +421,14 @@ async function handle(req, { params }) {
       const h = await db.collection('hackathons').findOne({ _id: id, verified: { $ne: false } });
       if (!h) return err('Hackathon not found', 404);
       const u = getUserFromToken(req);
+      const me = u ? await db.collection('users').findOne({ _id: u.id }) : null;
       const registeredIds = h.registeredUserIds || [];
       const teams = await db.collection('teams').find({ hackathonId: id }).sort({ createdAt: -1 }).toArray();
       return json({
-        hackathon: { ...h, id: h._id, registeredCount: registeredIds.length, isRegistered: u ? registeredIds.includes(u.id) : false },
+        hackathon: {
+          ...h, id: h._id, registeredCount: registeredIds.length, isRegistered: u ? registeredIds.includes(u.id) : false,
+          ...(me ? (hackathonMatch(h, me.skills) || {}) : {}),
+        },
         teams: teams.map((t) => ({ ...t, id: t._id })),
       });
     }
@@ -857,6 +888,8 @@ async function handle(req, { params }) {
       const hackathonsCount = await db.collection('hackathons').countDocuments({ verified: { $ne: false } });
       const pendingReportsCount = await db.collection('reports').countDocuments({ status: 'pending' });
       const pendingVerificationsCount = await db.collection('users').countDocuments({ verified: { $ne: true }, profileComplete: true });
+      const teamsWithRequests = await db.collection('teams').find({}, { projection: { joinRequests: 1 } }).toArray();
+      const applicationsCount = teamsWithRequests.reduce((s, t) => s + (t.joinRequests || []).length, 0);
       // skill popularity
       const allUsers = await db.collection('users').find({ profileComplete: true }, { projection: { skills: 1, college: 1, createdAt: 1 } }).toArray();
       const skillCounts = {}; const collegeCounts = {};
@@ -889,6 +922,7 @@ async function handle(req, { params }) {
         hackathons: hackathonsCount,
         pendingReports: pendingReportsCount,
         pendingVerifications: pendingVerificationsCount,
+        applications: applicationsCount,
         growthPct,
         growth,
         topSkills: Object.entries(skillCounts).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 8),
@@ -977,6 +1011,8 @@ async function handle(req, { params }) {
         _id: id, name: data.name, banner: data.banner || '', domain: data.domain || '', prize: data.prize || '',
         deadline: data.deadline || '', participants: data.participants || '0', tag: data.tag || 'New', status: data.status || 'active',
         college: data.college || '', description: data.description || '',
+        location: data.location || '', mode: data.mode || 'online', teamSize: data.teamSize || '', difficulty: data.difficulty || 'all-levels',
+        skillsRequired: Array.isArray(data.skillsRequired) ? data.skillsRequired : [], organizerLogo: data.organizerLogo || '',
         registeredUserIds: [],
         verified: true, submittedBy: null, submitterName: null,
         createdAt: new Date(),

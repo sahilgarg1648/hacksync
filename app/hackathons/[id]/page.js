@@ -12,8 +12,18 @@ import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import {
   Sparkles, Users, Calendar, GraduationCap, ArrowLeft, Trophy,
-  CheckCircle2, UserPlus, Plus, Loader2,
+  CheckCircle2, UserPlus, Plus, Loader2, MapPin, X,
 } from 'lucide-react';
+
+function daysLeftLabel(deadline) {
+  if (!deadline) return null;
+  const d = new Date(deadline);
+  if (Number.isNaN(d.getTime())) return deadline;
+  const days = Math.ceil((d.getTime() - Date.now()) / 86400000);
+  if (days < 0) return 'Closed';
+  if (days === 0) return 'Last day';
+  return `${days} day${days === 1 ? '' : 's'} left`;
+}
 
 const api = async (path, opts = {}) => {
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
@@ -36,11 +46,7 @@ const api = async (path, opts = {}) => {
   return data;
 };
 
-const Orbs = () => (
-  <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-    <div className="absolute inset-0 grid-pattern" />
-  </div>
-);
+const Orbs = () => null;
 
 const ROLES = ['Frontend Engineer', 'Backend Engineer', 'Full-Stack Engineer', 'AI/ML Engineer', 'Mobile Developer', 'UI/UX Designer', 'Blockchain Developer', 'DevOps', 'Product Manager'];
 
@@ -90,9 +96,10 @@ export default function HackathonDetailPage({ params }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [joiningId, setJoiningId] = useState(null);
 
+  const [error, setError] = useState(null);
   const load = () => {
-    setLoading(true);
-    api(`/hackathons/${id}`).then(setData).catch(() => setData(null)).finally(() => setLoading(false));
+    setLoading(true); setError(null);
+    api(`/hackathons/${id}`).then(setData).catch((e) => setError(e.message)).finally(() => setLoading(false));
   };
   useEffect(load, [id]);
 
@@ -151,8 +158,11 @@ export default function HackathonDetailPage({ params }) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-4">
         <Orbs />
-        <p className="text-neutral-500">Hackathon not found.</p>
-        <Button onClick={() => router.push('/hackathons')} variant="outline" className="bg-neutral-100 border-neutral-200">Back to all hackathons</Button>
+        <p className="text-neutral-500">{error ? "Couldn't load this hackathon." : 'Hackathon not found.'}</p>
+        <div className="flex gap-2">
+          {error && <Button onClick={load} variant="outline" className="bg-neutral-100 border-neutral-200">Try again</Button>}
+          <Button onClick={() => router.push('/hackathons')} variant="outline" className="bg-neutral-100 border-neutral-200">Back to all hackathons</Button>
+        </div>
       </div>
     );
   }
@@ -179,28 +189,51 @@ export default function HackathonDetailPage({ params }) {
             {h.banner ? (
               <img src={h.banner} alt={h.name} className="w-full h-full object-cover" />
             ) : (
-              <div className="w-full h-full bg-neutral-200 flex items-center justify-center"><Trophy className="w-16 h-16 text-neutral-400" /></div>
+              <div className="w-full h-full bg-neutral-50 flex flex-col items-center justify-center gap-3">
+                <div className="w-16 h-16 rounded-2xl bg-white border border-neutral-200 flex items-center justify-center"><Sparkles className="w-8 h-8 text-neutral-400" /></div>
+                <div className="text-sm text-neutral-400 font-medium">{h.domain || 'Hackathon'}</div>
+              </div>
+            )}
+            {h.organizerLogo && (
+              <img src={h.organizerLogo} alt="" className="absolute top-4 left-4 w-10 h-10 rounded-full ring-2 ring-white object-contain bg-white" />
             )}
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent" />
             <div className="absolute bottom-0 left-0 right-0 p-6 md:p-8">
-              <div className="flex items-center gap-2 mb-2">
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
                 <Badge className="bg-neutral-900/80 text-white border-0">{h.tag}</Badge>
                 {h.college && <Badge className="bg-neutral-900/80 text-white border-0 flex items-center gap-1"><GraduationCap className="w-3 h-3" /> {h.college}</Badge>}
+                {h.matchScore != null && <Badge className="bg-indigo-600 text-white border-0">{h.matchScore}% match</Badge>}
               </div>
               <h1 className="text-3xl md:text-5xl font-bold tracking-tight text-white">{h.name}</h1>
-              <p className="text-white/80 mt-1">{h.domain}</p>
+              <div className="flex items-center gap-3 mt-1 flex-wrap">
+                <p className="text-white/80">{h.domain}</p>
+                {(h.mode || h.location) && (
+                  <p className="text-white/80 flex items-center gap-1 text-sm">
+                    <MapPin className="w-3.5 h-3.5" />
+                    {[h.mode && h.mode[0].toUpperCase() + h.mode.slice(1), h.location].filter(Boolean).join(' · ')}
+                  </p>
+                )}
+              </div>
+              {h.skillsRequired?.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-3">
+                  {h.skillsRequired.map((s) => (
+                    <span key={s} className="px-2 py-0.5 rounded-md bg-white/15 text-white text-[11px]">{s}</span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-4 mb-8">
+        <div className="grid md:grid-cols-3 gap-4 mb-4">
           <div className="glass rounded-2xl p-5">
             <div className="text-xs text-neutral-400 mb-1">Prize pool</div>
             <div className="text-2xl font-bold gradient-text">{h.prize}</div>
           </div>
           <div className="glass rounded-2xl p-5">
             <div className="text-xs text-neutral-400 mb-1 flex items-center gap-1"><Calendar className="w-3 h-3" /> Deadline</div>
-            <div className="text-2xl font-bold">{h.deadline}</div>
+            <div className="text-2xl font-bold">{daysLeftLabel(h.deadline) || h.deadline}</div>
+            {daysLeftLabel(h.deadline) && h.deadline && <div className="text-xs text-neutral-400 mt-0.5">{h.deadline}</div>}
           </div>
           <div className="glass rounded-2xl p-5">
             <div className="text-xs text-neutral-400 mb-1 flex items-center gap-1"><Users className="w-3 h-3" /> Registered</div>
@@ -208,11 +241,52 @@ export default function HackathonDetailPage({ params }) {
           </div>
         </div>
 
+        {(h.teamSize || h.difficulty) && (
+          <div className="flex flex-wrap gap-2 mb-8 text-sm text-neutral-500">
+            {h.teamSize && <span className="glass rounded-lg px-3 py-1.5">Team size: {h.teamSize}</span>}
+            {h.difficulty && <span className="glass rounded-lg px-3 py-1.5 capitalize">{h.difficulty.replace('-', ' ')}</span>}
+          </div>
+        )}
+
         {h.description && (
           <div className="glass rounded-2xl p-6 mb-8">
             <h3 className="font-bold mb-2">About this hackathon</h3>
             <p className="text-neutral-600 leading-relaxed">{h.description}</p>
             {h.submitterName && <p className="text-xs text-neutral-400 mt-3">Submitted by {h.submitterName}</p>}
+          </div>
+        )}
+
+        {h.matchScore != null && (
+          <div className="glass rounded-2xl p-6 mb-8">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="text-3xl font-bold text-indigo-600">{h.matchScore}%</div>
+              <div>
+                <h3 className="font-bold">Why HackSync recommends this</h3>
+                <p className="text-xs text-neutral-500">Based on the skills this hackathon is looking for.</p>
+              </div>
+            </div>
+            <div className="grid sm:grid-cols-2 gap-4">
+              {h.matchedSkills?.length > 0 && (
+                <div>
+                  <div className="text-xs text-neutral-400 mb-2 uppercase tracking-wider">You match</div>
+                  <div className="space-y-1.5">
+                    {h.matchedSkills.map((s) => (
+                      <div key={s} className="flex items-center gap-2 text-sm text-neutral-700"><CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" /> {s}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {h.missingSkills?.length > 0 && (
+                <div>
+                  <div className="text-xs text-neutral-400 mb-2 uppercase tracking-wider">Missing</div>
+                  <div className="space-y-1.5">
+                    {h.missingSkills.map((s) => (
+                      <div key={s} className="flex items-center gap-2 text-sm text-neutral-500"><X className="w-4 h-4 text-neutral-400 flex-shrink-0" /> {s}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
