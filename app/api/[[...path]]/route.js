@@ -60,6 +60,33 @@ const DEFAULT_ROLES = [
 
 function json(body, status = 200) { return NextResponse.json(body, { status }); }
 function err(message, status = 400) { return json({ error: message }, status); }
+
+// ---------- input validation helpers ----------
+// Pragmatic email shape check (not full RFC 5322 — those reject valid addresses too eagerly).
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function isValidEmail(email) { return typeof email === 'string' && EMAIL_RE.test(email.trim()); }
+
+// Only http(s) links are ever safe to render as href/src — javascript:, data:, file: etc.
+// are XSS/tracking vectors when a user-controlled field is later rendered as a link or image.
+function isSafeUrl(url) {
+  if (!url) return true; // empty is fine for optional fields — caller decides if required
+  try {
+    const p = new URL(url);
+    return p.protocol === 'http:' || p.protocol === 'https:';
+  } catch { return false; }
+}
+
+// Strips angle brackets (defense-in-depth against markup injection) and caps length.
+function sanitizeText(value, maxLen = 200) {
+  return String(value ?? '').replace(/[<>]/g, '').trim().slice(0, maxLen);
+}
+
+function isValidGithub(value) {
+  const v = (value || '').trim();
+  if (!v) return true;
+  if (v.startsWith('http://') || v.startsWith('https://')) return isSafeUrl(v);
+  return /^[a-zA-Z0-9-]{1,39}$/.test(v); // GitHub's own username rules
+}
 function getToken(req) {
   const h = req.headers.get('authorization') || '';
   if (h.startsWith('Bearer ')) return h.slice(7);
@@ -234,7 +261,10 @@ async function handle(req, { params }) {
     if (path === '/auth/register' && method === 'POST') {
       const { email, password, name } = await req.json();
       if (!email || !password || !name) return err('Missing fields');
-      if (password.length < 6) return err('Password must be at least 6 characters');
+      if (!isValidEmail(email)) return err('Enter a valid email address');
+      if (password.length < 6 || password.length > 200) return err('Password must be 6-200 characters');
+      const cleanName = sanitizeText(name, 80);
+      if (!cleanName) return err('Enter a valid name');
       const normalizedEmail = email.toLowerCase().trim();
       const exists = await db.collection('users').findOne({ email: normalizedEmail });
       if (exists) return err('Email already registered', 409);
@@ -244,14 +274,14 @@ async function handle(req, { params }) {
       await db.collection('pending_registrations').updateOne(
         { _id: normalizedEmail },
         { $set: {
-            name, passwordHash, otpHash,
+            name: cleanName, passwordHash, otpHash,
             otpExpiresAt: new Date(Date.now() + OTP_TTL_MS),
             attempts: 0, lastSentAt: new Date(), createdAt: new Date(),
           } },
         { upsert: true }
       );
       try {
-        await sendOtpEmail(normalizedEmail, name, otp);
+        await sendOtpEmail(normalizedEmail, cleanName, otp);
       } catch (e) {
         return err('Could not send the verification email. Please try again in a moment.', 502);
       }
@@ -318,7 +348,8 @@ async function handle(req, { params }) {
 
     if (path === '/auth/login' && method === 'POST') {
       const { email, password } = await req.json();
-      const user = await db.collection('users').findOne({ email: email.toLowerCase() });
+      if (!email || !password || typeof email !== 'string') return err('Missing fields');
+      const user = await db.collection('users').findOne({ email: email.toLowerCase().trim() });
       if (!user) return err('Invalid credentials', 401);
       const ok = await bcrypt.compare(password, user.password);
       if (!ok) return err('Invalid credentials', 401);
@@ -404,7 +435,7 @@ async function handle(req, { params }) {
         const out = [];
         for (const raw of arr) {
           if (typeof raw !== 'string') continue;
-          const v = raw.trim().slice(0, maxLen);
+          const v = raw.replace(/[<>]/g, '').trim().slice(0, maxLen);
           const key = v.toLowerCase();
           if (!v || seen.has(key)) continue;
           seen.add(key);
@@ -413,17 +444,21 @@ async function handle(req, { params }) {
         }
         return out;
       };
+      if (data.avatar && !isSafeUrl(data.avatar)) return err('Avatar must be a valid image URL (http/https)');
+      if (data.linkedin && !isSafeUrl(data.linkedin)) return err('LinkedIn must be a valid URL (http/https)');
+      if (!isValidGithub(data.github)) return err('GitHub must be a username or a valid github.com URL');
+      const VALID_EXPERIENCE = ['beginner', 'intermediate', 'advanced', 'expert'];
       const update = {
-        college: data.college || '',
-        year: data.year || '',
-        bio: data.bio || '',
-        avatar: data.avatar || '',
+        college: sanitizeText(data.college, 100),
+        year: sanitizeText(data.year, 30),
+        bio: sanitizeText(data.bio, 500),
+        avatar: sanitizeText(data.avatar, 500),
         skills: sanitizeTags(data.skills),
         interests: sanitizeTags(data.interests),
-        github: data.github || '',
-        linkedin: data.linkedin || '',
+        github: sanitizeText(data.github, 200),
+        linkedin: sanitizeText(data.linkedin, 300),
         availability: sanitizeTags(data.availability),
-        experience: data.experience || 'beginner',
+        experience: VALID_EXPERIENCE.includes(data.experience) ? data.experience : 'beginner',
         profileComplete: true, updatedAt: new Date(),
       };
       await db.collection('users').updateOne({ _id: u.id }, { $set: update });
@@ -508,13 +543,21 @@ async function handle(req, { params }) {
       if (!Array.isArray(data.skillsRequired) || data.skillsRequired.length === 0) {
         return err('At least one required skill is needed');
       }
+      if (!isSafeUrl(data.banner)) return err('Banner must be a valid image URL (http/https)');
+      if (data.organizerLogo && !isSafeUrl(data.organizerLogo)) return err('Organizer logo must be a valid image URL (http/https)');
+      const skillsRequired = data.skillsRequired
+        .filter((s) => typeof s === 'string')
+        .map((s) => s.replace(/[<>]/g, '').trim().slice(0, 30))
+        .filter(Boolean)
+        .slice(0, 20);
+      if (skillsRequired.length === 0) return err('At least one required skill is needed');
       const id = uuidv4();
       const h = {
-        _id: id, name: data.name.trim(), banner: data.banner.trim(), domain: data.domain.trim(), prize: data.prize.trim(),
-        deadline: data.deadline.trim(), participants: data.participants.trim(), tag: 'New', status: 'active',
-        college: data.college.trim(), description: data.description.trim(),
-        location: data.location.trim(), mode: data.mode.trim(), teamSize: data.teamSize.trim(), difficulty: data.difficulty.trim(),
-        skillsRequired: data.skillsRequired, organizerLogo: String(data.organizerLogo || '').trim(),
+        _id: id, name: sanitizeText(data.name, 120), banner: data.banner.trim(), domain: sanitizeText(data.domain, 60), prize: sanitizeText(data.prize, 60),
+        deadline: data.deadline.trim(), participants: sanitizeText(data.participants, 30), tag: 'New', status: 'active',
+        college: sanitizeText(data.college, 120), description: sanitizeText(data.description, 1000),
+        location: sanitizeText(data.location, 120), mode: data.mode.trim(), teamSize: data.teamSize.trim(), difficulty: data.difficulty.trim(),
+        skillsRequired, organizerLogo: String(data.organizerLogo || '').trim(),
         registeredUserIds: [],
         verified: false, submittedBy: u.id, submitterName: u.name,
         createdAt: new Date(),
@@ -622,7 +665,7 @@ async function handle(req, { params }) {
       const u = getUserFromToken(req);
       if (!u) return err('Unauthorized', 401);
       const { name, description, hackathonId, rolesNeeded } = await req.json();
-      if (!name) return err('Team name is required');
+      if (!name || !String(name).trim()) return err('Team name is required');
       if (hackathonId) {
         const h = await db.collection('hackathons').findOne({ _id: hackathonId });
         if (!h) return err('Hackathon not found', 404);
@@ -631,7 +674,7 @@ async function handle(req, { params }) {
       const me = await db.collection('users').findOne({ _id: u.id });
       const id = uuidv4();
       const team = {
-        _id: id, name, description: description || '',
+        _id: id, name: sanitizeText(name, 80), description: sanitizeText(description, 500),
         hackathonId: hackathonId || null,
         rolesNeeded: Array.isArray(rolesNeeded) ? rolesNeeded : [],
         ownerId: u.id,
@@ -1126,9 +1169,12 @@ async function handle(req, { params }) {
     if (path === '/admin/hackathons' && method === 'POST') {
       const r = await requireAdmin(req, db); if (r.err) return r.err;
       const data = await req.json();
+      if (!data.name) return err('Name is required');
+      if (data.banner && !isSafeUrl(data.banner)) return err('Banner must be a valid image URL (http/https)');
+      if (data.organizerLogo && !isSafeUrl(data.organizerLogo)) return err('Organizer logo must be a valid image URL (http/https)');
       const id = uuidv4();
       const h = {
-        _id: id, name: data.name, banner: data.banner || '', domain: data.domain || '', prize: data.prize || '',
+        _id: id, name: sanitizeText(data.name, 120), banner: data.banner || '', domain: data.domain || '', prize: data.prize || '',
         deadline: data.deadline || '', participants: data.participants || '0', tag: data.tag || 'New', status: data.status || 'active',
         college: data.college || '', description: data.description || '',
         location: data.location || '', mode: data.mode || 'online', teamSize: data.teamSize || '', difficulty: data.difficulty || 'all-levels',
@@ -1145,6 +1191,8 @@ async function handle(req, { params }) {
       const r = await requireAdmin(req, db); if (r.err) return r.err;
       const id = segs[2];
       const data = await req.json();
+      if (data.banner && !isSafeUrl(data.banner)) return err('Banner must be a valid image URL (http/https)');
+      if (data.organizerLogo && !isSafeUrl(data.organizerLogo)) return err('Organizer logo must be a valid image URL (http/https)');
       await db.collection('hackathons').updateOne({ _id: id }, { $set: data });
       if ('verified' in data) {
         await db.collection('audit_logs').insertOne({ _id: uuidv4(), actorId: r.user._id, action: data.verified ? 'hackathon.approve' : 'hackathon.unverify', target: id, at: new Date() });
